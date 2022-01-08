@@ -1,390 +1,427 @@
-import * as Common from 'common.js';
+import * as Common from "lib/common.js";
+import * as Server from "lib/server.js";
+import * as Player from "lib/player.js";
 
-/** 
+/**
+ * Player instance.
+ */
+let player;
+
+/**
+ * Target of our attack.
+ */
+let target;
+
+/**
+ * Config instance.
+ */
+let config;
+
+let attack = "weaken";
+
+let targetSecurity = 0;
+
+let targetMinSecurity = 0;
+
+let fullHackCycles = 0;
+
+let hackCycles = 0;
+
+let growCycles = 0;
+
+let weakenCycles = 0;
+
+/**
+ * Predicted changes in target server security after an attack.
+ */
+const changeHack = 0.002;
+const changeGrow = 0.004;
+const changeWeaken = 0.05;
+
+/**
  * Centralized monitoring script, that runs in a
- * single thread on the "home" server. 
- * 
+ * single thread on the "home" server.
+ *
  * It monitors the attacked servers' stats in
- * an interval and decides on whether to hack, 
- * weaken or grow the target server during the 
+ * an interval and decides on whether to hack,
+ * weaken or grow the target server during the
  * next interval.
- * 
- * The decission is transported to the 
+ *
+ * The decision is transported to the
  * distributed worker nodes via the ctrl.js
  * mechanism.
- * 
+ *
  * @param {NS} ns
  */
 export async function main(ns) {
+	await Server.initialize(ns);
+	player = Player.get(ns);
+
 	while (true) {
-		refreshKnownServers(ns);
+		config = Common.getConfig(ns);
+		player.refresh(ns);
 
-		await scanTargets(ns);
-		growNetwork(ns);
-		checkForFreeServers(ns);
+		selectTarget(ns);
+		chooseAction(ns);
+		await calcMaxCycles(ns);
 
-		await ns.sleep(5000);
+		explainAttack(ns);
+
+		await coordinateAttack(ns);
+
+		await ns.sleep(target.timeWeaken + 300);
 	}
 }
 
 /**
- * The attack and script configuration.
+ * Output some details about the current attack.
+ *
+ * @param {NS} ns
  */
-let config = {};
+function explainAttack(ns) {
+	const wakeUpTime = Common.timestamp(target.timeWeaken + 300);
+	const wakeUpTimeSec = parseInt((target.timeWeaken + 300) / 1000);
+	const minSecurity = target.minDifficulty.toFixed(2);
+	const curSecurity = target.hackDifficulty.toFixed(2);
+	const maxMoney = Common.formatMoney(target.moneyMax);
+	const curMoney = Common.formatMoney(target.moneyAvailable);
+	const timeHack = Common.formatTime(target.timeHack);
+	const timeWeaken = Common.formatTime(target.timeWeaken);
+	const timeGrow = Common.formatTime(target.timeGrow);
+	const timeHackSec = parseInt(target.timeHack / 1000);
+	const timeWeakenSec = parseInt(target.timeWeaken / 1000);
+	const timeGrowSec = parseInt(target.timeGrow / 1000);
+	const delayHack = Common.formatTime(target.delayHack);
+	const delayGrow = Common.formatTime(target.delayGrow);
+	const delayHackSec = parseInt(target.delayHack / 1000);
+	const delayGrowSec = parseInt(target.delayGrow / 1000);
 
-/**
- * List of all known servers.
- */
-let knownServers = {};
+	const lines = [
+		"Attack details:",
+		`  - Target server:   ${target.hostname}`,
+		`  - Attack mode:     ${attack}`,
+		`  - Target security: ${curSecurity} / ${minSecurity}`,
+		`  - Target money:    ${curMoney} / ${maxMoney}`,
+		`  - Time to hack:    ${timeHack} [${timeHackSec} sec]`,
+		`  - Time to weaken:  ${timeWeaken} [${timeWeakenSec} sec]`,
+		`  - Time to grow:    ${timeGrow} [${timeGrowSec} sec]`,
+		`  - Hack delay:      ${delayHack} [${delayHackSec} sec]`,
+		`  - Grow delay:      ${delayGrow} [${delayGrowSec} sec]`,
+		`  - Wake up time     ${wakeUpTime} [${wakeUpTimeSec} sec]`,
+	];
 
-/**
- * Refreshes the list of known remote servers.
- */
-function refreshKnownServers(ns) {
-	knownServers = Common.findAllServers(ns);
+	Common.say(ns, lines.join("\n"));
 }
 
 /**
- * Reads details from the config/server files and
- * performs relevant scans, to decide the next tasks
- * Updates the config file when done.
+ * Selects the attacked target server, either by using
+ * the fixed target from the config file, or by
+ * calculating the most profitable server.
  */
-async function scanTargets(ns) {
-	const config = Common.getConfig(ns);
-
-	// Step 1: Pick target.
+function selectTarget(ns) {
 	const prevTarget = config.target;
 
 	if (config.autoPick) {
-		config.target = compareTargets(ns);
+		target = Server.byProfit(ns);
+		config.target = target.hostname;
 	}
+
 	if (prevTarget !== config.target) {
-		ns.tprint(`Monitoring picked a new target: ${config.target}`);
+		Common.say(ns, "New target selected", config.target);
 	}
-	const server = ns.getServer(config.target);
-
-	// Step 2: Decide action probability.
-	calcActions(ns, config, server);
-
-	// Save the config file.
-	await Common.setConfig(ns, config);
 }
 
 /**
- * Analyze all servers and pick the most profitable one.
+ * Decide on the attack focus (hack, grow, weaken).
+ * @param {NS} ns
  */
-function compareTargets(ns) {
-	const stats = Common.getPlayerStats(ns);
-	const keys = Object.keys(servers);
+function chooseAction(ns) {
+	target.refreshStats(ns);
 
-	let bestProfit = 0;
-	let bestServer = null;
+	targetSecurity = target.hackDifficulty;
+	targetMinSecurity = target.minDifficulty;
 
-	/**
-	 * Each server is compared using the following 
-	 * criteria:
-	 * 
-	 * - root access .. required to hack a server.
-	 * - company server .. we cannot hack own servers.
-	 * - hacking skill .. it limits the servers we can hack.
-	 * - security level [1 - 99] .. lower is preferred.
-	 * - max money .. higher is preferred.
-	 */
-	for (let i = 0; i < keys.length; i++) {
-		const server = knownServers[keys[i]];
+	const maxSec = parseFloat((targetMinSecurity + config.boundSec).toFixed(4));
+	const minMoney = parseInt(target.moneyMax * config.boundMoney);
 
-		if (
-			!server.hasAdminRights
-			|| server.purchasedByPlayer
-			|| server.requiredHackingSkill > stats.hacking
-		) {
-			continue;
-		}
-
-		const rateMoney = server.moneyMax + server.moneyAvailable / 10;
-		const rateSec = server.baseDifficulty + server.hackDifficulty / 10;
-		const rateProfit = rateMoney / rateSec;
-
-		if (rateProfit > bestProfit) {
-			bestProfit = rateProfit;
-			bestServer = server;
-			Common.log(
-				ns,
-				'Possible Target',
-				parseInt(bestProfit).toLocaleString(),
-				server.hostname,
-				`\$ ${parseInt(rateMoney).toLocaleString()}`,
-				`Sec ${parseInt(rateSec).toLocaleString()}`
-			);
-		}
-	}
-
-	if (bestServer) {
-		return bestServer.hostname;
-	}
-
-	// Default response in case of failure.
-	return 'n00dles';
-}
-
-/**
- * Scan the target and decide which action to take.
- */
-function calcActions(ns, config, server) {
-	const target = server.hostname;
-	const maxMoney = server.moneyMax;
-	const minSec = server.baseDifficulty;
-
-	const secArgs = [
-		parseFloat(server.hackDifficulty.toFixed(3)),
-		minSec + config.boundSec,
-		minSec
-	];
-	const moneyArgs = [
-		parseInt(server.moneyAvailable),
-		maxMoney,
-		maxMoney * config.boundMoney
-	];
-
-	config.weaken = calcUrgency('lower', ...secArgs);
-	config.grow = calcUrgency('raise', ...moneyArgs);
-
-	Common.log(
-		ns,
-		target,
-		`Weaken ${config.weaken.toFixed(2)} [${secArgs.join(', ')}]`,
-		`Grow ${config.grow.toFixed(2)} [${moneyArgs.join(', ')}]`
-	);
-}
-
-/**
- * Decide how urgent it is to align the current value
- * inside the bounds.
- * 
- * @return {number} A value between 0 (not urgent) and 1 (very urgent).
- */
-function calcUrgency(goal, current, upperBound, lowerBound) {
-	if (upperBound < lowerBound) {
-		const tmp = upperBound;
-		upperBound = lowerBound;
-		lowerBound = tmp;
-	}
-
-	let urgency = 0;
-
-	if (current > upperBound) {
-		urgency = 0;
-	} else if (current < lowerBound) {
-		urgency = 1;
+	if (targetSecurity > maxSec) {
+		attack = "weaken";
+	} else if (target.moneyAvailable < minMoney) {
+		attack = "grow";
 	} else {
-		urgency = (current - lowerBound) / (upperBound - lowerBound);
-	}
-
-	urgency = Math.min(Math.max(urgency, 0.05), 0.95);
-	if ('raise' === goal) {
-		urgency = 1 - urgency;
-	}
-
-	return parseFloat(urgency.toFixed(4));
-}
-
-/**
- * Checks all known servers to see if they have free
- * resources that we can use for our worker script.
- */
-function checkForFreeServers(ns) {
-	refreshKnownServers(ns);
-	const keys = Object.keys(knownServers);
-	const requiredRam = ns.getScriptRam('work.js', 'home');
-	const freeServers = [];
-
-	for (let i = 0; i < keys.length; i++) {
-		const server = knownServers[keys[i]];
-		const freeRam = server.maxRam - server.ramUsed;
-
-		// Continue, if insufficient permissions.
-		if (!server.hasAdminRights && !server.purchasedByPlayer) {
-			continue;
-		}
-
-		// Continue, if server has too little RAM.
-		if (freeRam < requiredRam) {
-			continue;
-		}
-
-		freeServers.push(server.hostname);
-	}
-
-	/* 
-	 * If a server with free capacity is detected, then
-	 * reinstall and start our tools network wide.
-	 */
-	if (freeServers.length) {
-		Common.say(ns, `Available resources found on [${freeServers.join(', ')}]`);
-		ns.spawn('master.js', 1, '--install', '--start', '--quiet');
+		attack = "hack";
 	}
 }
 
 /**
- * Automatically upgrades servers and nodes or purchases
- * new elements when possible.
- * 
- * This function will constantly extend the server/node
- * network with following rules:
- * 
- * 1. Purchase new servers with minimal RAM, until the 
- *    server limit is reached
- * 2. Determine costs of the following actions:
- *    - Upgrade server RAM (delete + purchase new server)
- *    - New Hacknet Node
- *    - Hacknet Node RAM Update
- *    - Hacknet Node Level Update
- *    - Hacknet Node Core Update
- *    - Hacknet Server Cache Update
- *    Pick the cheapeast of all available actions.
- * 
- * The function will only perform a single action when
- * called.
+ * Re-calculates the total attack threads we can run.
+ *
+ * @param {NS} ns
  */
-function growNetwork(ns) {
-	const stats = Common.getPlayerStats(ns);
-	const upgrades = getAvailableUpgrades(ns);
-	const availableMoney = stats.money;
+async function calcMaxCycles(ns) {
+	hackCycles = 0;
+	growCycles = 0;
+	weakenCycles = 0;
 
-	let select = null;
+	await Server.allAttackers((server) => {
+		hackCycles += Math.floor(server.ramMax / 1.7);
+		growCycles += Math.floor(server.ramMax / 1.75);
+		weakenCycles += Math.floor(server.ramMax / 1.75);
+	});
 
-	for (let i = 0; i < upgrades.length; i++) {
-		const upgrade = upgrades[i];
+	// How many threads will completely empty the targets money?
+	fullHackCycles = 100 / Math.max(0.00000001, target.hackAnalyze);
+	fullHackCycles = Math.ceil(fullHackCycles);
+}
 
-		// Skip options that we cannot afford.
-		if (upgrade.cost > availableMoney) {
-			continue;
-		}
+/**
+ * How many "weaken" threads are needed to compensate the security increase
+ * that's caused by the given amount of "grow" threads?
+ *
+ * @param {int} growCycles
+ * @return {int}
+ */
+function weakenCyclesForGrow(growCycles) {
+	return Math.max(0, Math.ceil(growCycles * (changeGrow / changeWeaken)));
+}
 
-		// New servers are always preferred.
-		if ('add_server' === upgrade.action) {
-			select = upgrade;
+/**
+ * How many "weaken" threads are needed to compensate the security increase
+ * that's caused by the given amount of "hack" threads?
+ *
+ * @param {int} growCycles
+ * @return {int}
+ */
+function weakenCyclesForHack(hackCycles) {
+	return Math.max(0, Math.ceil(hackCycles * (changeHack / changeWeaken)));
+}
+
+/**
+ * Performs the prepared attack against the target server.
+ *
+ * @param {NS} ns
+ */
+async function coordinateAttack(ns) {
+	switch (attack) {
+		case "weaken":
+			await doAttackWeaken(ns);
 			break;
-		}
-
-		if (!select || upgrade.cost < select.cost) {
-			select = upgrade;
-		}
-	}
-
-	if (!select) {
-		return;
-	}
-
-	switch (select.action) {
-		case 'add_server':
-			Common.say(ns, `Purchase new Server: ${select.name} [${select.ram} GB]`);
-			ns.purchaseServer(select.name, select.ram);
+		case "grow":
+			await doAttackGrow(ns);
 			break;
-		case 'upg_server':
-			Common.say(ns, `Upgrade Server: ${select.name} [${select.ram} GB]`);
-			ns.deleteServer(select.name);
-			ns.purchaseServer(select.name, select.ram);
-			break;
-		case 'add_node':
-			Common.say(ns, `Purchase Hacknet Node`);
-			ns.hacknet.purchaseNode();
-			break;
-		case 'upg_node_lvl':
-			Common.say(ns, `Upgrade Hacknet Level: Node ${select.index} [+${select.step}]`);
-			ns.hacknet.upgradeLevel(select.index, select.step);
-			break;
-		case 'upg_node_ram':
-			Common.say(ns, `Upgrade Hacknet RAM: Node ${select.index} [+${select.step}]`);
-			ns.hacknet.upgradeRam(select.index, select.step);
-			break;
-		case 'upg_node_cre':
-			Common.say(ns, `Upgrade Hacknet Cores: Node ${select.index} [+${select.step}]`);
-			ns.hacknet.upgradeCore(select.index, select.step);
+		default:
+			await doAttackHack(ns);
 			break;
 	}
 }
 
 /**
- * Collects a list of all possible upgrades and their 
- * costs.
+ * Coordinate a "weaken" attack against the target server.
+ *
+ * @param {NS} ns
  */
-function getAvailableUpgrades(ns) {
-	const serverMaxRam = ns.getPurchasedServerMaxRam();
-	const serverMaxNum = ns.getPurchasedServerLimit();
-	const serverList = ns.getPurchasedServers();
-	const nodesCount = ns.hacknet.numNodes();
-	const nodesMax = ns.hacknet.maxNumNodes();
-	const serverInitRam = 4;
-	const nodeStepLevel = 10;
-	const nodeStepRam = 5;
-	const nodeStepCore = 5;
-	const actions = [];
+async function doAttackWeaken(ns) {
+	if (changeWeaken * weakenCycles > targetSecurity - targetMinSecurity) {
+		/**
+		 * Target server will reach the minimum security during this attack.
+		 * See if we have spare resources that we can use to grow the target.
+		 */
+		weakenCycles = (targetSecurity - targetMinSecurity) / changeWeaken;
+		weakenCycles = Math.ceil(weakenCycles);
+		growCycles -= weakenCycles;
+		growCycles = Math.max(0, growCycles);
 
-	// Purchase new servers.
-	if (serverList.length < serverMaxNum) {
-		actions.push({
-			action: 'add_server',
-			cost: ns.getPurchasedServerCost(serverInitRam),
-			name: `pserv-${serverList.length}`,
-			ram: serverInitRam
-		});
+		weakenCycles += weakenCyclesForGrow(growCycles);
+		growCycles -= weakenCyclesForGrow(growCycles);
+		growCycles = Math.max(0, growCycles);
+	} else {
+		/**
+		 * Target server does not reach minimum security during this attack.
+		 * Focus all available resources on the weaken attack.
+		 */
+		growCycles = 0;
 	}
 
-	// Upgrade existing servers.
-	for (let i = 0; i < serverList.length; i++) {
-		const name = serverList[i];
-		const upgradeRam = 2 * ns.getServerMaxRam(name);
+	// Explain what will happen.
+	const lines = [
+		"Weaken attack threads:",
+		`Grow:     ${growCycles}`,
+		`Weaken:   ${weakenCycles}`,
+		`Security: -${(changeWeaken * weakenCycles).toFixed(2)}`,
+	];
+	Common.say(ns, lines.join("\n"));
 
-		if (upgradeRam < serverMaxRam) {
-			actions.push({
-				action: 'upg_server',
-				cost: ns.getPurchasedServerCost(upgradeRam),
-				name,
-				ram: upgradeRam
-			});
+	await Server.allAttackers(async (server) => {
+		server.refreshRam(ns);
+
+		let cyclesFittable = Math.floor(server.ramFree / 1.75);
+		cyclesFittable = Math.max(0, cyclesFittable);
+
+		const cyclesToRun = Math.max(0, Math.min(cyclesFittable, growCycles));
+
+		if (cyclesToRun) {
+			await server.attack(
+				ns,
+				"grow",
+				cyclesToRun,
+				target.hostname,
+				target.delayGrow
+			);
+
+			growCycles -= cyclesToRun;
+			cyclesFittable -= cyclesToRun;
 		}
+
+		if (cyclesFittable) {
+			await server.attack(
+				ns,
+				"weaken",
+				cyclesFittable,
+				target.hostname,
+				0
+			);
+
+			weakenCycles -= cyclesFittable;
+		}
+	});
+}
+
+/**
+ * Coordinate a "grow" attack against the target server.
+ *
+ * @param {NS} ns
+ */
+async function doAttackGrow(ns) {
+	weakenCycles = weakenCyclesForGrow(growCycles);
+	growCycles -= weakenCycles;
+
+	// Explain what will happen.
+	const lines = [
+		"Grow attack threads:",
+		`Grow:     ${growCycles}`,
+		`Weaken:   ${weakenCycles}`,
+	];
+	Common.say(ns, lines.join("\n"));
+
+	await Server.allAttackers(async (server) => {
+		server.refreshRam(ns);
+
+		let cyclesFittable = Math.floor(server.ramFree / 1.75);
+		cyclesFittable = Math.max(0, cyclesFittable);
+
+		const cyclesToRun = Math.max(0, Math.min(cyclesFittable, growCycles));
+
+		if (cyclesToRun) {
+			await server.attack(
+				ns,
+				"grow",
+				cyclesToRun,
+				target.hostname,
+				target.delayGrow
+			);
+
+			growCycles -= cyclesToRun;
+			cyclesFittable -= cyclesToRun;
+		}
+
+		if (cyclesFittable) {
+			await server.attack(
+				ns,
+				"weaken",
+				cyclesFittable,
+				target.hostname,
+				0
+			);
+
+			weakenCycles -= cyclesFittable;
+		}
+	});
+}
+
+/**
+ * Coordinate a "hack" attack against the target server.
+ *
+ * @param {NS} ns
+ */
+async function doAttackHack(ns) {
+	if (hackCycles > fullHackCycles) {
+		hackCycles = fullHackCycles;
+
+		if (hackCycles * 100 < growCycles) {
+			hackCycles *= 10;
+		}
+
+		growCycles = growCycles - Math.ceil((hackCycles * 1.7) / 1.75);
+		growCycles = Math.max(0, growCycles);
+
+		weakenCycles =
+			weakenCyclesForGrow(growCycles) + weakenCyclesForHack(hackCycles);
+		growCycles -= weakenCycles;
+		hackCycles -= Math.ceil((weakenCyclesForHack(hackCycles) * 1.75) / 1.7);
+
+		growCycles = Math.max(0, growCycles);
+	} else {
+		growCycles = 0;
+		weakenCycles = weakenCyclesForHack(hackCycles);
+		hackCycles -= Math.ceil((weakenCycles * 1.75) / 1.7);
 	}
 
-	// Purchase new hacknet nodes.
-	if (nodesCount < nodesMax) {
-		actions.push({
-			action: 'add_node',
-			cost: ns.hacknet.getPurchaseNodeCost()
-		});
-	}
+	// Explain what will happen.
+	const lines = [
+		"Hack attack threads:",
+		`Hack:     ${hackCycles}`,
+		`Grow:     ${growCycles}`,
+		`Weaken:   ${weakenCycles}`,
+	];
+	Common.say(ns, lines.JOIN("\n"));
 
-	// Update existing hacknet nodes.
-	for (let i = 0; i < nodesCount; i++) {
-		const costLevel = ns.hacknet.getLevelUpgradeCost(i, nodeStepLevel);
-		const costRam = ns.hacknet.getRamUpgradeCost(i, nodeStepCore);
-		const costCore = ns.hacknet.getCoreUpgradeCost(i, nodeStepRam);
+	await Server.allAttackers(async (server) => {
+		server.refreshRam(ns);
 
-		if (costLevel && costLevel !== Infinity) {
-			actions.push({
-				action: 'upg_node_lvl',
-				cost: costLevel,
-				index: i,
-				step: nodeStepLevel
-			});
-		}
-		if (costRam && costRam !== Infinity) {
-			actions.push({
-				action: 'upg_node_ram',
-				cost: costRam,
-				index: i,
-				step: nodeStepRam
-			});
-		}
-		if (costCore && costCore !== Infinity) {
-			actions.push({
-				action: 'upg_node_cre',
-				cost: costCore,
-				index: i,
-				step: nodeStepCore
-			});
-		}
-	}
+		let cyclesFittable = Math.floor(server.ramFree / 1.7);
+		cyclesFittable = Math.max(0, cyclesFittable);
 
-	return actions;
+		const cyclesToRun = Math.max(0, Math.min(cyclesFittable, hackCycles));
+
+		if (cyclesToRun) {
+			await server.attack(
+				ns,
+				"hack",
+				cyclesToRun,
+				target.hostname,
+				target.delayHack
+			);
+
+			hackCycles -= cyclesToRun;
+			cyclesFittable -= cyclesToRun;
+		}
+
+		const freeRam = server.ramFree - cyclesToRun * 1.7;
+		cyclesFittable = Math.max(0, Math.floor(freeRam / 1.75));
+
+		if (cyclesFittable && growCycles) {
+			await server.attack(
+				ns,
+				"grow",
+				cyclesToRun,
+				target.hostname,
+				target.delayGrow
+			);
+
+			growCycles -= cyclesToRun;
+			cyclesFittable -= cyclesToRun;
+		}
+
+		if (cyclesFittable) {
+			await server.attack(
+				ns,
+				"weaken",
+				cyclesFittable,
+				target.hostname,
+				0
+			);
+
+			weakenCycles -= cyclesFittable;
+		}
+	});
 }
