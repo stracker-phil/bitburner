@@ -23,7 +23,7 @@ export async function main(ns) {
 			);
 		} else {
 			if (server.hasAdminRights) {
-				infos.push("HACKED");
+				infos.push(`${server.backdoorInstalled ? "◼︎" : "◻︎"} HACKED`);
 			} else {
 				infos.push(`lvl ${server.requiredHackingSkill}`);
 			}

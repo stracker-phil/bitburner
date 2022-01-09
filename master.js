@@ -139,13 +139,31 @@ export async function main(ns) {
 	Player.get(ns);
 
 	if (args.info) {
-		let target = config.target;
+		const info = [];
 
-		ns.tprintf("\nConfig:\n%s\n\n", JSON.stringify(config, null, 4));
+		info.push("");
+		info.push("Config:");
+		info.push(JSON.stringify(config, null, 4));
+		info.push("");
 
-		if (target) {
-			ns.exec("tools/analyze-server.js", "home", 1, target);
+		if (config.target) {
+			const server = Server.get(config.target);
+			
+			info.push("Current attack target:");
+			info.push("");
+
+			info.push(server.analyze(ns).replaceAll("%", "%%"));
+			info.push("");
 		}
+
+		info.push("");
+		ns.tprintf(info.join("\n"));
+
+		await ns.sleep(250);
+		ns.tail("attk.js", "home");
+
+		await ns.sleep(250);
+		ns.tail("grow.js", "home");
 	}
 
 	endScript(ns);

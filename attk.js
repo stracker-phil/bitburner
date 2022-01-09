@@ -63,16 +63,13 @@ export async function main(ns) {
 	while (true) {
 		config = Common.getConfig(ns);
 
-		// Hack servers that became available since last attack.
-		await Server.all((server) => server.setup(ns));
-
 		if (!config.started) {
 			return ns.exit();
 		}
 
 		player.refresh(ns);
 
-		selectTarget(ns);
+		await selectTarget(ns);
 
 		if (!target) {
 			ns.alert(
@@ -89,6 +86,9 @@ export async function main(ns) {
 		const duration = await coordinateAttack(ns);
 
 		await ns.sleep(duration + 100);
+
+		// Hack servers that became available since last attack.
+		await Server.all((server) => server.setup(ns));
 	}
 }
 
@@ -136,7 +136,7 @@ function explainAttack(ns) {
  * the fixed target from the config file, or by
  * calculating the most profitable server.
  */
-function selectTarget(ns) {
+async function selectTarget(ns) {
 	const prevTarget = config.target;
 
 	if (config.autoTarget) {
@@ -148,6 +148,7 @@ function selectTarget(ns) {
 
 	if (prevTarget !== config.target) {
 		Common.say(ns, "New target selected", config.target);
+		await Common.setConfig(ns, config);
 	}
 }
 

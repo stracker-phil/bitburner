@@ -1,4 +1,4 @@
-import * as Server from 'lib/server.js'
+import * as Server from "lib/server.js";
 
 export async function main(ns) {
 	const args = ns.flags([["help", false]]);
