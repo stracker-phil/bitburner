@@ -23,6 +23,9 @@ export async function main(ns) {
 	await Server.initialize(ns);
 	player = Player.get(ns);
 
+	ns.clearLog();
+	ns.disableLog("ALL");
+
 	while (true) {
 		config = Common.getConfig(ns);
 		player.refresh(ns);
@@ -30,7 +33,7 @@ export async function main(ns) {
 		await growNetwork(ns);
 		workOnTasks(ns);
 
-		await ns.sleep(5000);
+		await ns.sleep(30000);
 	}
 }
 
@@ -59,7 +62,6 @@ export async function main(ns) {
  * @return {int} Number of purchased upgrades.
  */
 async function growNetwork(ns) {
-	const upgrades = getAvailableUpgrades(ns);
 	const initialBalance = player.money;
 
 	let success = true;
@@ -67,7 +69,8 @@ async function growNetwork(ns) {
 
 	while (success) {
 		player.refresh(ns);
-		const budget = parseInt(player.money - config.autoGrow);
+		const upgrades = getAvailableUpgrades(ns);
+		const budget = parseInt(player.money - config.lockedBudget);
 
 		let select = null;
 		let msg = "";
@@ -88,15 +91,23 @@ async function growNetwork(ns) {
 
 		// Stop, if no affordable upgrade exists.
 		if (!select) {
-			const spent = initialBalance - player.money;
+			if (count) {
+				const spent = initialBalance - player.money;
 
-			Common.log(
-				ns,
-				"No more affordable upgrades",
-				`Purchased ${count} upgraded (\$ ${spent.toLocaleString()})`,
-				`Budget: ${budget.toLocaleString()}`,
-				`Locked budget: ${config.autoGrow.toLocaleString()}`
+				Common.log(
+					ns,
+					"Updates done",
+					`Purchased ${count} upgrades`,
+					`Spent ${Common.formatMoney(ns, spent)}`
+				);
+			}
+
+			// Dump a list of unaffordable upgrades to the console.
+			console.log(
+				"List of unaffordable upgrades:",
+				getAvailableUpgrades(ns)
 			);
+
 			break;
 		}
 
@@ -146,7 +157,8 @@ async function growNetwork(ns) {
 
 			case "buy_tor":
 				msg = `Purchase TOR router`;
-				success = ns.purchaseTor();
+				// TODO: Requires NS-4
+				// success = ns.purchaseTor();
 				break;
 
 			case "buy_program":
@@ -158,7 +170,7 @@ async function growNetwork(ns) {
 		}
 
 		if (msg) {
-			Common.say(ns, msg);
+			Common.log(ns, msg, Common.formatMoney(ns, select.cost));
 		}
 
 		if (success) {
@@ -239,7 +251,7 @@ function getAvailableUpgrades(ns) {
 	// Upgrade existing servers.
 	for (let i = 0; i < serverList.length; i++) {
 		const name = serverList[i];
-		const currRam = Server.get(name, "maxRam");
+		const currRam = Server.get(name, "ramMax");
 		const newRam = 4 + currRam;
 
 		if (newRam && !isNaN(newRam) && newRam < serverMaxRam) {
@@ -311,14 +323,14 @@ function getAvailableUpgrades(ns) {
 	}
 
 	// Purchase missing programs.
+	// TODO: Requires NS-4
+	/*
 	if (!player.tor) {
 		actions.push({
 			action: "buy_tor",
 			cost: 200000,
 		});
 	} else {
-		// TODO: Requires NS-4
-		/*
 		Common.hackingTools.forEach(tool => {
 			if (!ns.fileExists(tool.file, 'home')) {
 				actions.push({
@@ -328,8 +340,8 @@ function getAvailableUpgrades(ns) {
 				});
 			}
 		});
-		*/
 	}
+	*/
 
 	return actions;
 }

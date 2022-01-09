@@ -57,19 +57,38 @@ export async function main(ns) {
 	await Server.initialize(ns);
 	player = Player.get(ns);
 
+	ns.clearLog();
+	ns.disableLog("ALL");
+
 	while (true) {
 		config = Common.getConfig(ns);
+
+		// Hack servers that became available since last attack.
+		await Server.all((server) => server.setup(ns));
+
+		if (!config.started) {
+			return ns.exit();
+		}
+
 		player.refresh(ns);
 
 		selectTarget(ns);
+
+		if (!target) {
+			ns.alert(
+				'Invalid target. Please check your config with "master --info"'
+			);
+			return ns.exit();
+		}
+
 		chooseAction(ns);
 		await calcMaxCycles(ns);
 
 		explainAttack(ns);
 
-		await coordinateAttack(ns);
+		const duration = await coordinateAttack(ns);
 
-		await ns.sleep(target.timeWeaken + 300);
+		await ns.sleep(duration + 100);
 	}
 }
 
@@ -80,37 +99,36 @@ export async function main(ns) {
  */
 function explainAttack(ns) {
 	const wakeUpTime = Common.timestamp(target.timeWeaken + 300);
-	const wakeUpTimeSec = parseInt((target.timeWeaken + 300) / 1000);
 	const minSecurity = target.minDifficulty.toFixed(2);
 	const curSecurity = target.hackDifficulty.toFixed(2);
-	const maxMoney = Common.formatMoney(target.moneyMax);
-	const curMoney = Common.formatMoney(target.moneyAvailable);
-	const timeHack = Common.formatTime(target.timeHack);
-	const timeWeaken = Common.formatTime(target.timeWeaken);
-	const timeGrow = Common.formatTime(target.timeGrow);
-	const timeHackSec = parseInt(target.timeHack / 1000);
-	const timeWeakenSec = parseInt(target.timeWeaken / 1000);
-	const timeGrowSec = parseInt(target.timeGrow / 1000);
-	const delayHack = Common.formatTime(target.delayHack);
-	const delayGrow = Common.formatTime(target.delayGrow);
-	const delayHackSec = parseInt(target.delayHack / 1000);
-	const delayGrowSec = parseInt(target.delayGrow / 1000);
+	const maxMoney = Common.formatMoney(ns, target.moneyMax);
+	const curMoney = Common.formatMoney(ns, target.moneyAvailable);
+	const percentMoney = (target.moneyAvailable / target.moneyMax) * 100;
+	const timeHack = ns.tFormat(target.timeHack);
+	const timeWeaken = ns.tFormat(target.timeWeaken);
+	const timeGrow = ns.tFormat(target.timeGrow);
+	const delayHack = ns.tFormat(target.delayHack);
+	const delayGrow = ns.tFormat(target.delayGrow);
 
 	const lines = [
 		"Attack details:",
 		`  - Target server:   ${target.hostname}`,
 		`  - Attack mode:     ${attack}`,
 		`  - Target security: ${curSecurity} / ${minSecurity}`,
-		`  - Target money:    ${curMoney} / ${maxMoney}`,
-		`  - Time to hack:    ${timeHack} [${timeHackSec} sec]`,
-		`  - Time to weaken:  ${timeWeaken} [${timeWeakenSec} sec]`,
-		`  - Time to grow:    ${timeGrow} [${timeGrowSec} sec]`,
-		`  - Hack delay:      ${delayHack} [${delayHackSec} sec]`,
-		`  - Grow delay:      ${delayGrow} [${delayGrowSec} sec]`,
-		`  - Wake up time     ${wakeUpTime} [${wakeUpTimeSec} sec]`,
+		`  - Target money:    ${curMoney} / ${maxMoney}  [${percentMoney.toFixed(
+			2
+		)}%]`,
+		`  - Time to hack:    ${timeHack}`,
+		`  - Time to weaken:  ${timeWeaken}`,
+		`  - Time to grow:    ${timeGrow}`,
+		`  - Hack delay:      ${delayHack}`,
+		`  - Grow delay:      ${delayGrow}`,
+		`  - Wake up time     ${wakeUpTime}`,
+		"",
 	];
 
-	Common.say(ns, lines.join("\n"));
+	ns.clearLog();
+	ns.print(lines.join("\n"));
 }
 
 /**
@@ -121,9 +139,11 @@ function explainAttack(ns) {
 function selectTarget(ns) {
 	const prevTarget = config.target;
 
-	if (config.autoPick) {
+	if (config.autoTarget) {
 		target = Server.byProfit(ns);
 		config.target = target.hostname;
+	} else {
+		target = Server.get(config.target);
 	}
 
 	if (prevTarget !== config.target) {
@@ -202,25 +222,50 @@ function weakenCyclesForHack(hackCycles) {
  * @param {NS} ns
  */
 async function coordinateAttack(ns) {
+	let duration = 0;
+
 	switch (attack) {
 		case "weaken":
-			await doAttackWeaken(ns);
+			duration = await doAttackWeaken(ns);
 			break;
 		case "grow":
-			await doAttackGrow(ns);
+			duration = await doAttackGrow(ns);
 			break;
 		default:
-			await doAttackHack(ns);
+			if ("hwgw" === config.hackAlgo) {
+				duration = await doAttackHackHwgw(ns);
+			} else {
+				duration = await doAttackHackDefault(ns);
+			}
 			break;
 	}
+
+	return Math.ceil(duration);
+}
+
+/**
+ * Returns the largest duration value.
+ *
+ * @param {int} duration1
+ * @param {int} duration2
+ * @returns {int} The largest duration.
+ */
+function getDuration(duration1, duration2) {
+	if (isNaN(duration1) || duration1 < duration2) {
+		return duration2;
+	}
+	return duration1;
 }
 
 /**
  * Coordinate a "weaken" attack against the target server.
  *
  * @param {NS} ns
+ * @returns {int} Duration of the slowest command.
  */
 async function doAttackWeaken(ns) {
+	let duration = 0;
+
 	if (changeWeaken * weakenCycles > targetSecurity - targetMinSecurity) {
 		/**
 		 * Target server will reach the minimum security during this attack.
@@ -249,7 +294,7 @@ async function doAttackWeaken(ns) {
 		`Weaken:   ${weakenCycles}`,
 		`Security: -${(changeWeaken * weakenCycles).toFixed(2)}`,
 	];
-	Common.say(ns, lines.join("\n"));
+	ns.print(lines.join("\n"));
 
 	await Server.allAttackers(async (server) => {
 		server.refreshRam(ns);
@@ -260,12 +305,16 @@ async function doAttackWeaken(ns) {
 		const cyclesToRun = Math.max(0, Math.min(cyclesFittable, growCycles));
 
 		if (cyclesToRun) {
-			await server.attack(
+			server.attack(
 				ns,
 				"grow",
 				cyclesToRun,
 				target.hostname,
 				target.delayGrow
+			);
+			duration = getDuration(
+				duration,
+				target.timeGrow + target.delayGrow
 			);
 
 			growCycles -= cyclesToRun;
@@ -273,25 +322,25 @@ async function doAttackWeaken(ns) {
 		}
 
 		if (cyclesFittable) {
-			await server.attack(
-				ns,
-				"weaken",
-				cyclesFittable,
-				target.hostname,
-				0
-			);
+			server.attack(ns, "weaken", cyclesFittable, target.hostname, 0);
+			duration = getDuration(duration, target.timeWeaken);
 
 			weakenCycles -= cyclesFittable;
 		}
 	});
+
+	return duration;
 }
 
 /**
  * Coordinate a "grow" attack against the target server.
  *
  * @param {NS} ns
+ * @returns {int} Duration of the slowest command.
  */
 async function doAttackGrow(ns) {
+	let duration = 0;
+
 	weakenCycles = weakenCyclesForGrow(growCycles);
 	growCycles -= weakenCycles;
 
@@ -301,7 +350,7 @@ async function doAttackGrow(ns) {
 		`Grow:     ${growCycles}`,
 		`Weaken:   ${weakenCycles}`,
 	];
-	Common.say(ns, lines.join("\n"));
+	ns.print(lines.join("\n"));
 
 	await Server.allAttackers(async (server) => {
 		server.refreshRam(ns);
@@ -312,12 +361,16 @@ async function doAttackGrow(ns) {
 		const cyclesToRun = Math.max(0, Math.min(cyclesFittable, growCycles));
 
 		if (cyclesToRun) {
-			await server.attack(
+			server.attack(
 				ns,
 				"grow",
 				cyclesToRun,
 				target.hostname,
 				target.delayGrow
+			);
+			duration = getDuration(
+				duration,
+				target.timeGrow + target.delayGrow
 			);
 
 			growCycles -= cyclesToRun;
@@ -325,25 +378,25 @@ async function doAttackGrow(ns) {
 		}
 
 		if (cyclesFittable) {
-			await server.attack(
-				ns,
-				"weaken",
-				cyclesFittable,
-				target.hostname,
-				0
-			);
+			server.attack(ns, "weaken", cyclesFittable, target.hostname, 0);
+			duration = getDuration(duration, target.timeWeaken);
 
 			weakenCycles -= cyclesFittable;
 		}
 	});
+
+	return duration;
 }
 
 /**
  * Coordinate a "hack" attack against the target server.
  *
  * @param {NS} ns
+ * @returns {int} Duration of the slowest command.
  */
-async function doAttackHack(ns) {
+async function doAttackHackDefault(ns) {
+	let duration = 0;
+
 	if (hackCycles > fullHackCycles) {
 		hackCycles = fullHackCycles;
 
@@ -373,7 +426,7 @@ async function doAttackHack(ns) {
 		`Grow:     ${growCycles}`,
 		`Weaken:   ${weakenCycles}`,
 	];
-	Common.say(ns, lines.JOIN("\n"));
+	ns.print(lines.join("\n"));
 
 	await Server.allAttackers(async (server) => {
 		server.refreshRam(ns);
@@ -384,12 +437,16 @@ async function doAttackHack(ns) {
 		const cyclesToRun = Math.max(0, Math.min(cyclesFittable, hackCycles));
 
 		if (cyclesToRun) {
-			await server.attack(
+			server.attack(
 				ns,
 				"hack",
 				cyclesToRun,
 				target.hostname,
 				target.delayHack
+			);
+			duration = getDuration(
+				duration,
+				target.timeHack + target.delayHack
 			);
 
 			hackCycles -= cyclesToRun;
@@ -400,12 +457,16 @@ async function doAttackHack(ns) {
 		cyclesFittable = Math.max(0, Math.floor(freeRam / 1.75));
 
 		if (cyclesFittable && growCycles) {
-			await server.attack(
+			server.attack(
 				ns,
 				"grow",
 				cyclesToRun,
 				target.hostname,
 				target.delayGrow
+			);
+			duration = getDuration(
+				duration,
+				target.timeGrow + target.delayGrow
 			);
 
 			growCycles -= cyclesToRun;
@@ -413,15 +474,144 @@ async function doAttackHack(ns) {
 		}
 
 		if (cyclesFittable) {
-			await server.attack(
-				ns,
-				"weaken",
-				cyclesFittable,
-				target.hostname,
-				0
-			);
+			server.attack(ns, "weaken", cyclesFittable, target.hostname, 0);
+			duration = getDuration(duration, target.timeWeaken);
 
 			weakenCycles -= cyclesFittable;
 		}
 	});
+
+	return duration;
+}
+
+/**
+ * Hack the server using an advanced HWGW-batch algorithm.
+ * Returns true, when the attack was launched, or false if the server
+ * has insufficient RAM for such an attack.
+ *
+ * @param {NS} ns
+ * @returns {int} Duration of the slowest cycle.
+ */
+async function doAttackHackHwgw(ns) {
+	// Duration of one HWGW batch cycle.
+	const hwgwDuration = Math.max(
+		target.timeGrow,
+		target.timeWeaken,
+		target.timeHack
+	);
+
+	// Maximum batches that fit into one cycle.
+	const hwgwPerCycle = Math.floor(hwgwDuration / 20);
+
+	const timeWeaken = target.timeWeaken;
+	const timeGrow = target.timeGrow;
+	const timeHack = target.timeHack;
+	const maxTime = Math.max(timeWeaken, timeGrow, timeHack);
+
+	let delay = 0;
+	let batches = 0;
+	let batchesInCycle = 0;
+	let cycles = 1;
+	let threads = 0;
+	let duration = 0;
+
+	let step, startHack, startWeak1, startGrow, startWeak2, minStart;
+
+	function nextCycle() {
+		cycles++;
+		batchesInCycle = 0;
+		delay = cycles;
+	}
+
+	function nextBatch() {
+		batches++;
+		batchesInCycle++;
+		step = 0;
+
+		startHack = maxTime - timeHack;
+		startWeak1 = 20 + maxTime - timeWeaken;
+		startGrow = 40 + maxTime - timeGrow;
+		startWeak2 = 60 + maxTime - timeWeaken;
+		minStart = Math.min(startHack, startWeak1, startGrow, startWeak2);
+		startHack = delay + startHack - minStart;
+		startWeak1 = delay + startWeak1 - minStart;
+		startGrow = delay + startGrow - minStart;
+		startWeak2 = delay + startWeak2 - minStart;
+
+		duration = getDuration(duration, 80 + delay + maxTime);
+
+		// Delay the next batch by 20ms.
+		delay += 20;
+
+		if (batchesInCycle > hwgwPerCycle) {
+			nextCycle();
+		}
+	}
+
+	function nextStep(server) {
+		let script, ramNeeded, startAfter;
+		server.refreshRam(ns);
+
+		switch (step) {
+			case 1:
+				script = "weaken";
+				startAfter = startWeak2;
+				ramNeeded = 1.75;
+				break;
+			case 2:
+				script = "hack";
+				startAfter = startHack;
+				ramNeeded = 1.7;
+				break;
+			case 3:
+				script = "grow";
+				startAfter = startGrow;
+				ramNeeded = 1.75;
+				break;
+			case 0:
+			default:
+				script = "weaken";
+				startAfter = startWeak1;
+				ramNeeded = 1.75;
+				break;
+		}
+
+		// When no more RAM available on this server,
+		// we'll continue the batch on the next server.
+		if (
+			server.ramFree >= ramNeeded &&
+			server.attack(ns, script, 1, target.hostname, startAfter)
+		) {
+			step++;
+			threads++;
+
+			if (step > 3) {
+				nextBatch();
+			}
+
+			return true;
+		} else {
+			return false;
+		}
+	}
+
+	nextBatch();
+	await Server.allAttackers(async (server) => {
+		let success = true;
+
+		do {
+			success = nextStep(server);
+		} while (success);
+	});
+
+	// Explain what will happen.
+	const lines = [
+		"HWGW attack:",
+		`Threads:  ${threads}`,
+		`Batches:  ${batches} (${(batches * 6.95).toFixed(2)} GB RAM)`,
+		`Cycles:   ${cycles}`,
+	];
+	ns.print(lines.join("\n"));
+
+	return duration;
 }
