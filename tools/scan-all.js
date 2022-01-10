@@ -1,4 +1,4 @@
-import { formatMoney } from "lib/common.js";
+import * as Common from "lib/common.js";
 import * as Server from "lib/server.js";
 
 export async function main(ns) {
@@ -17,6 +17,7 @@ export async function main(ns) {
 	}
 
 	const list = [];
+	const config = Common.getConfig(ns);
 
 	const filterChild = (host) => {
 		if (!host) {
@@ -68,9 +69,14 @@ export async function main(ns) {
 			infos.push(server.cmdConnect());
 		}
 
+		let icon = ">";
+		if (config.target === server.hostname) {
+			icon = "►";
+		}
+
 		list.push({
 			prefix,
-			name: `${prefix} > ${parent}`,
+			name: `${prefix} ${icon} ${parent}`,
 			infos,
 		});
 

@@ -6,7 +6,7 @@ export async function main(ns) {
 
 	if (args.help || !ns.args.length) {
 		ns.tprint("This script does a more detailed analysis of a server.");
-		ns.tprint(`Usage: run ${ns.getScriptName()} SERVER [SERVER2]`);
+		ns.tprint(`Usage: run ${ns.getScriptName()} SERVER [SERVER2 ...]`);
 		ns.tprint("Example:");
 		ns.tprint(`> run ${ns.getScriptName()} n00dles foodnstuff`);
 		return;
