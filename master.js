@@ -46,6 +46,8 @@ export async function main(ns) {
 		["stop", false],
 		["info", false],
 		["target", ""],
+		["auto-target", ""],
+		["auto-grow", ""],
 		["hack-algo", ""],
 		["bound-sec", ""],
 		["bound-money", ""],
@@ -71,16 +73,26 @@ export async function main(ns) {
 		config.started = false;
 	}
 
-	if ("" !== args.target) {
-		if (ns.serverExists(args.target)) {
-			Common.say(ns, `Change target server to ${args.target}`);
-			config.target = args.target;
-			config.autoTarget = false;
-		} else if ("auto" === args.target) {
-			Common.say(ns, "Auto pick target server");
-			config.target = "";
-			config.autoTarget = true;
+	if ("" !== args.target && ns.serverExists(args.target)) {
+		config.target = args.target;
+		Common.say(ns, `Change target server to ${config.target}`);
+
+		if (!config["auto-target"]) {
+			config["auto-target"] = "off";
 		}
+	}
+
+	if ("" !== args["auto-target"]) {
+		if ("on" === args["auto-target"]) {
+			config.autoTarget = true;
+		} else if ("off" === args["auto-target"]) {
+			config.autoTarget = false;
+		}
+
+		Common.say(
+			ns,
+			`Auto pick attacked server: ${config.autoTarget ? "On" : "Off"}`
+		);
 	}
 
 	if ("" !== args["hack-algo"]) {
@@ -104,6 +116,19 @@ export async function main(ns) {
 		config.boundMoney = Math.max(config.boundMoney, 0);
 		config.boundMoney = Math.min(config.boundMoney, 1);
 		Common.say(ns, `New money boundary: ${config.boundMoney.toFixed(2)}`);
+	}
+
+	if ("" !== args["auto-grow"]) {
+		if ("on" === args["auto-grow"]) {
+			config.autoGrow = true;
+		} else if ("off" === args["auto-grow"]) {
+			config.autoGrow = false;
+		}
+
+		Common.say(
+			ns,
+			`Automatic network growth: ${config.autoGrow ? "On" : "Off"}`
+		);
 	}
 
 	if ("" !== args["lock-money"]) {
@@ -139,6 +164,11 @@ export async function main(ns) {
 	Player.get(ns);
 
 	if (args.info) {
+		await ns.sleep(100);
+
+		// Refresh config, in case attk.js changed target.
+		config = Common.getConfig(ns);
+
 		const info = [];
 
 		info.push("");
@@ -148,7 +178,7 @@ export async function main(ns) {
 
 		if (config.target) {
 			const server = Server.get(config.target);
-			
+
 			info.push("Current attack target:");
 			info.push("");
 
@@ -190,19 +220,23 @@ function showHelp(ns) {
 		"  --hack-algo <name>  Enable a different hacking algorithm",
 		"               default ... Default algorithm",
 		"               hwgw ... Hack-Weaken-Grow-Weaken batches",
+		"",
+		"  --auto-target on|off  Enable or Disable automatic picking of",
+		"               the target server, based on maximal expected profit",
 		"  --target <server>  Tell all worker nodes to target a specific",
 		"               server.",
-		'               Set the server to "auto" to let the script pick.',
-		"               the most profitable target.",
+		"",
 		"  --bound-sec <num>  Define the security level boundary.",
 		"               Default: 4",
 		"  --bound-money <num>  Define the money boundary.",
 		"               Default: 0.6",
 		"",
+		"  --auto-grow on|off  Enable or Disable automatic network growth.",
 		"  --lock-money <val>  Defines the locked budget that should",
-		"               not be invested into automatic server growth.",
+		"               not be invested into automatic network growth.",
 		"               Set to 0 to automatically invest all your money.",
 		"               Sample values: 20k, 250m, 1050b",
+		"",
 		"  --lock-ram <val>  Defines, how much RAM is reserved on the home",
 		"               computer. RAM that is not reserved is used by",
 		"               attk.js to attack a target server.",

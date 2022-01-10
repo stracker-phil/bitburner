@@ -113,6 +113,9 @@ function explainAttack(ns) {
 	const lines = [
 		"Attack details:",
 		`  - Target server:   ${target.hostname}`,
+		`  - Profit rating:   ${
+			target.profitRating
+		} (${target.profitValue.toLocaleString()})`,
 		`  - Attack mode:     ${attack}`,
 		`  - Target security: ${curSecurity} / ${minSecurity}`,
 		`  - Target money:    ${curMoney} / ${maxMoney}  [${percentMoney.toFixed(
@@ -510,24 +513,25 @@ async function doAttackHackHwgw(ns) {
 	const maxTime = Math.max(timeWeaken, timeGrow, timeHack);
 
 	let delay = 0;
-	let batches = 0;
+	let totalBatches = 0;
+	let totalSteps = 0;
 	let batchesInCycle = 0;
-	let cycles = 1;
-	let threads = 0;
+	let totalRam = 0;
+	let totalCycles = 1;
 	let duration = 0;
 
 	let step, startHack, startWeak1, startGrow, startWeak2, minStart;
 
 	function nextCycle() {
-		cycles++;
+		totalCycles++;
 		batchesInCycle = 0;
-		delay = cycles;
+		delay = totalCycles;
 	}
 
 	function nextBatch() {
-		batches++;
+		totalBatches++;
 		batchesInCycle++;
-		step = 0;
+		step = "H";
 
 		startHack = maxTime - timeHack;
 		startWeak1 = 20 + maxTime - timeWeaken;
@@ -549,44 +553,58 @@ async function doAttackHackHwgw(ns) {
 		}
 	}
 
-	function nextStep(server) {
-		let script, ramNeeded, startAfter;
-		server.refreshRam(ns);
+	function nextStep(server, threads, runStep) {
+		const manualStep = !!runStep;
+		let nextStep, script, ramNeeded, startAfter;
 
-		switch (step) {
-			case 1:
-				script = "weaken";
-				startAfter = startWeak2;
-				ramNeeded = 1.75;
-				break;
-			case 2:
+		if (isNaN(threads) || threads < 1) {
+			threads = 1;
+		}
+		if (!manualStep) {
+			runStep = step;
+		}
+
+		switch (runStep) {
+			case "H":
 				script = "hack";
 				startAfter = startHack;
 				ramNeeded = 1.7;
+				nextStep = "W1";
 				break;
-			case 3:
-				script = "grow";
-				startAfter = startGrow;
-				ramNeeded = 1.75;
-				break;
-			case 0:
-			default:
+			case "W1":
 				script = "weaken";
 				startAfter = startWeak1;
 				ramNeeded = 1.75;
+				nextStep = "G";
+				break;
+			case "G":
+				script = "grow";
+				startAfter = startGrow;
+				ramNeeded = 1.75;
+				nextStep = "W2";
+				break;
+			case "W2":
+				script = "weaken";
+				startAfter = startWeak2;
+				ramNeeded = 1.75;
+				nextStep = "H";
 				break;
 		}
 
+		ramNeeded *= threads;
+
+		server.refreshRam(ns);
 		// When no more RAM available on this server,
 		// we'll continue the batch on the next server.
 		if (
 			server.ramFree >= ramNeeded &&
-			server.attack(ns, script, 1, target.hostname, startAfter)
+			server.attack(ns, script, threads, target.hostname, startAfter)
 		) {
-			step++;
-			threads++;
+			step = nextStep;
+			totalSteps++;
+			totalRam += ramNeeded;
 
-			if (step > 3) {
+			if (!step || "H" === step) {
 				nextBatch();
 			}
 
@@ -597,20 +615,41 @@ async function doAttackHackHwgw(ns) {
 	}
 
 	nextBatch();
+
+	// Run 1: Start batches with max-threads on every server.
+	await Server.allAttackers(async (server) => {
+		const threads = Math.floor(server.ramFree / 6.95);
+
+		if ("H" !== step) {
+			console.error(
+				`HWGW attack got out of sync! Starting with step ${step} on ${server.hostname}`
+			);
+		}
+
+		if (threads < 1) {
+			return;
+		}
+
+		nextStep(server, threads, "H");
+		nextStep(server, threads, "W1");
+		nextStep(server, threads, "G");
+		nextStep(server, threads, "W2");
+	});
+
+	// Run 2: Start distributed, single-thread batches to use all resources.
 	await Server.allAttackers(async (server) => {
 		let success = true;
 
-		do {
+		while (success) {
 			success = nextStep(server);
-		} while (success);
+		}
 	});
 
 	// Explain what will happen.
 	const lines = [
 		"HWGW attack:",
-		`Threads:  ${threads}`,
-		`Batches:  ${batches} (${(batches * 6.95).toFixed(2)} GB RAM)`,
-		`Cycles:   ${cycles}`,
+		`Steps:    ${totalSteps}`,
+		`Batches:  ${totalBatches} (${totalRam.toFixed(2)} GB RAM)`,
 	];
 	ns.print(lines.join("\n"));
 

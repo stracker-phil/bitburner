@@ -14,7 +14,7 @@ let player;
 
 /**
  * Autonomous growth script that purchases or
- * upgrades servers/hacknodes, buys programs
+ * upgrades servers, hacknodes, buys programs
  * or performs non-hacking tasks.
  *
  * @param {NS} ns
@@ -28,10 +28,13 @@ export async function main(ns) {
 
 	while (true) {
 		config = Common.getConfig(ns);
-		player.refresh(ns);
 
-		await growNetwork(ns);
-		workOnTasks(ns);
+		if (config.autoGrow) {
+			player.refresh(ns);
+
+			await growNetwork(ns);
+			workOnTasks(ns);
+		}
 
 		await ns.sleep(30000);
 	}
@@ -46,12 +49,14 @@ export async function main(ns) {
  *
  *   - Purchase new servers (with minimal RAM)
  *   - Upgrade RAM of existing servers
- *   - Purchse new Hacknet Node
+ *   - Purchase new Hacknet Node
  *   - Update Hacknet Node RAM
  *   - Update Hacknet Node Level
  *   - Update Hacknet Node Core
+ * 
+ * NS4:
  *   - todo: Update Hacknet Server Cache
- *   - Purchase TOR router
+ *   - todo: Purchase TOR router
  *   - todo: Darkweb programs
  *   - todo: Upgrade home RAM
  *   - todo: Upgrade home cores
@@ -252,7 +257,7 @@ function getAvailableUpgrades(ns) {
 	for (let i = 0; i < serverList.length; i++) {
 		const name = serverList[i];
 		const currRam = Server.get(name, "ramMax");
-		const newRam = 4 + currRam;
+		const newRam = 2 * currRam;
 
 		if (newRam && !isNaN(newRam) && newRam < serverMaxRam) {
 			actions.push({
