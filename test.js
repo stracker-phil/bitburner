@@ -38,11 +38,11 @@ const tests = [
 		threads: 100,
 		runner: async (ns) => {
 			const timeHack = getTime(ns.getHackTime(target)) + 100;
-			ns.exec("run-hack.js", "home", 20, target, 20, 20);
-			ns.exec("run-hack.js", "home", 20, target, 20, 40);
-			ns.exec("run-hack.js", "home", 20, target, 20, 60);
-			ns.exec("run-hack.js", "home", 20, target, 20, 80);
-			ns.exec("run-hack.js", "home", 20, target, 20, 100);
+			ns.exec("run-hack.js", "home", 20, target, 20);
+			ns.exec("run-hack.js", "home", 20, target, 40);
+			ns.exec("run-hack.js", "home", 20, target, 60);
+			ns.exec("run-hack.js", "home", 20, target, 80);
+			ns.exec("run-hack.js", "home", 20, target, 100);
 			await ns.sleep(timeHack);
 		},
 	},
@@ -73,10 +73,10 @@ const tests = [
 				startGrow = delay + startGrow - minStart;
 				startWeak2 = delay + startWeak2 - minStart;
 
-				ns.exec("run-weaken.js", "home", 1, target, 1, startWeak1);
-				ns.exec("run-weaken.js", "home", 1, target, 1, startWeak2);
-				ns.exec("run-hack.js", "home", 1, target, 1, startHack);
-				ns.exec("run-grow.js", "home", 1, target, 1, startGrow);
+				ns.exec("run-weaken.js", "home", 1, target, startWeak1);
+				ns.exec("run-weaken.js", "home", 1, target, startWeak2);
+				ns.exec("run-hack.js", "home", 1, target, startHack);
+				ns.exec("run-grow.js", "home", 1, target, startGrow);
 				batches++;
 
 				return 80 + maxTime;
@@ -115,10 +115,10 @@ const tests = [
 				startGrow = delay + startGrow - minStart;
 				startWeak2 = delay + startWeak2 - minStart;
 
-				ns.exec("run-weaken.js", "home", 1, target, 1, startWeak1);
-				ns.exec("run-weaken.js", "home", 1, target, 1, startWeak2);
-				ns.exec("run-hack.js", "home", 1, target, 1, startHack);
-				ns.exec("run-grow.js", "home", 1, target, 1, startGrow);
+				ns.exec("run-weaken.js", "home", 1, target, startWeak1);
+				ns.exec("run-weaken.js", "home", 1, target, startWeak2);
+				ns.exec("run-hack.js", "home", 1, target, startHack);
+				ns.exec("run-grow.js", "home", 1, target, startGrow);
 				batches++;
 
 				return 80 + maxTime;
@@ -158,10 +158,10 @@ const tests = [
 				startGrow = delay + startGrow - minStart;
 				startWeak2 = delay + startWeak2 - minStart;
 
-				ns.exec("run-weaken.js", "home", 1, target, 1, startWeak1);
-				ns.exec("run-weaken.js", "home", 1, target, 1, startWeak2);
-				ns.exec("run-hack.js", "home", 1, target, 1, startHack);
-				ns.exec("run-grow.js", "home", 1, target, 1, startGrow);
+				ns.exec("run-weaken.js", "home", 1, target, startWeak1);
+				ns.exec("run-weaken.js", "home", 1, target, startWeak2);
+				ns.exec("run-hack.js", "home", 1, target, startHack);
+				ns.exec("run-grow.js", "home", 1, target, startGrow);
 				batches++;
 
 				return 80 + maxTime;
@@ -207,10 +207,10 @@ const tests = [
 				startGrow = delay + startGrow - minStart;
 				startWeak2 = delay + startWeak2 - minStart;
 
-				ns.exec("run-weaken.js", "home", 1, target, 1, startWeak1);
-				ns.exec("run-weaken.js", "home", 1, target, 1, startWeak2);
-				ns.exec("run-hack.js", "home", 1, target, 1, startHack);
-				ns.exec("run-grow.js", "home", 1, target, 1, startGrow);
+				ns.exec("run-weaken.js", "home", 1, target, startWeak1);
+				ns.exec("run-weaken.js", "home", 1, target, startWeak2);
+				ns.exec("run-hack.js", "home", 1, target, startHack);
+				ns.exec("run-grow.js", "home", 1, target, startGrow);
 				batches++;
 
 				return 80 + maxTime;
@@ -293,14 +293,14 @@ async function prepare(ns) {
 		const curMoney = server.moneyAvailable;
 		const timeWeak = ns.getWeakenTime(target);
 		const timeGrow = ns.getGrowTime(target);
-		const timeDiff = 50; //Math.ceil(Math.abs(timeWeak - timeGrow));
+		const timeDiff = 50;
 
 		if (curSecurity > minSecurity) {
 			ns.exec("run-grow.js", "home", 20, target);
-			ns.exec("run-weaken.js", "home", 80, target, 80, timeDiff + 100);
+			ns.exec("run-weaken.js", "home", 80, target, timeDiff + 100);
 		} else if (curMoney < maxMoney) {
 			ns.exec("run-grow.js", "home", 80, target);
-			ns.exec("run-weaken.js", "home", 20, target, 20, timeDiff + 100);
+			ns.exec("run-weaken.js", "home", 20, target, timeDiff + 100);
 		} else {
 			dumpSpace(ns);
 			return;

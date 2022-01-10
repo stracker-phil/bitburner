@@ -40,6 +40,17 @@ export async function main(ns) {
 		const prefix = " -".repeat(level);
 		const infos = [];
 
+		const minSecurity = server.minDifficulty.toFixed(2);
+		const curSecurity = server.hackDifficulty.toFixed(2);
+		const maxMoney = Common.formatMoney(ns, server.moneyMax);
+		const curMoney = Common.formatMoney(ns, server.moneyAvailable);
+		const percentMoney =
+			server.moneyMax > 0
+				? Math.ceil((server.moneyAvailable / server.moneyMax) * 100) +
+				  "%"
+				: "-    ";
+		const requiredSkill = server.requiredHackingSkill.toString();
+
 		if (server.purchasedByPlayer) {
 			infos.push(`${server.ramTotalMax} GB`);
 			infos.push(
@@ -49,12 +60,17 @@ export async function main(ns) {
 			if (server.hasAdminRights) {
 				infos.push(`${server.backdoorInstalled ? "◼︎" : "◻︎"} HACKED`);
 			} else {
-				infos.push(`lvl ${server.requiredHackingSkill}`);
+				infos.push(
+					`lvl ${" ".repeat(
+						4 - requiredSkill.length
+					)}${requiredSkill}`
+				);
 			}
 		}
 
-		if (!args.analyze) {
+		if (!args.analyze && !server.purchasedByPlayer) {
 			infos.push(server.profitRating);
+			infos.push(server.securityRating);
 		}
 		if (server.organizationName) {
 			infos.push(server.organizationName);
@@ -65,6 +81,14 @@ export async function main(ns) {
 				`[${
 					server.profitRating
 				}] ${server.profitValue.toLocaleString()}`
+			);
+			infos.push(
+				`[${server.securityRating}] ${curSecurity} / ${minSecurity}`
+			);
+			infos.push(
+				`[${" ".repeat(
+					Math.max(0, 5 - percentMoney.length)
+				)}${percentMoney}] ${curMoney} / ${maxMoney}`
 			);
 			infos.push(server.cmdConnect());
 		}

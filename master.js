@@ -45,15 +45,16 @@ export async function main(ns) {
 		["start", false],
 		["stop", false],
 		["info", false],
+		["install", false],
 		["target", ""],
 		["auto-target", ""],
 		["auto-grow", ""],
-		["hack-algo", ""],
 		["bound-sec", ""],
 		["bound-money", ""],
 		["lock-budget", ""],
 		["lock-money", ""],
 		["lock-ram", ""],
+		["grow-skill", ""],
 	]);
 
 	if (args.help) {
@@ -93,15 +94,6 @@ export async function main(ns) {
 			ns,
 			`Auto pick attacked server: ${config.autoTarget ? "On" : "Off"}`
 		);
-	}
-
-	if ("" !== args["hack-algo"]) {
-		if ("hwgw" === args["hack-algo"]) {
-			config.hackAlgo = "hwgw";
-		} else if ("default" === args["hack-algo"]) {
-			config.hackAlgo = "default";
-		}
-		Common.say(ns, `Change hacking algorithm to ${config.hackAlgo}`);
 	}
 
 	if ("" !== args["bound-sec"]) {
@@ -156,11 +148,36 @@ export async function main(ns) {
 		);
 	}
 
+	if ("" !== args["grow-skill"]) {
+		config.skillThreads = parseFloat(args["grow-skill"]) || 0;
+		config.skillThreads = Math.max(config.skillThreads, 0);
+
+		if (config.skillThreads > 0) {
+			config.skillThreads = Math.max(config.skillThreads, 3);
+		}
+		Common.say(
+			ns,
+			`Allocate resources for skill growth: ${config.skillThreads.toFixed(
+				2
+			)} threads`
+		);
+	}
+
 	// Store config/server list in files.
 	await Common.setConfig(ns, config);
 
 	// Refresh player and server stats; start services on all servers.
 	await Server.initialize(ns);
+
+	if (args.install) {
+		await Server.all(async (server) => {
+			await server.uninstallTools(ns);
+			await server.setup(ns);
+		});
+
+		Common.say(ns, "Re-installed scripts on all servers");
+	}
+
 	Player.get(ns);
 
 	if (args.info) {
@@ -194,6 +211,9 @@ export async function main(ns) {
 
 		await ns.sleep(250);
 		ns.tail("grow.js", "home");
+
+		await ns.sleep(250);
+		ns.tail("sgrw.js", "home");
 	}
 
 	endScript(ns);
@@ -215,11 +235,8 @@ function showHelp(ns) {
 		"Commands:",
 		"  --start      Start all stopped services.",
 		"  --stop       Stop all running services.",
+		"  --install    Re-install the hacking scripts on all servers.",
 		"  --info       Outputs the current attack config.",
-		"",
-		"  --hack-algo <name>  Enable a different hacking algorithm",
-		"               default ... Default algorithm",
-		"               hwgw ... Hack-Weaken-Grow-Weaken batches",
 		"",
 		"  --auto-target on|off  Enable or Disable automatic picking of",
 		"               the target server, based on maximal expected profit",
@@ -240,6 +257,8 @@ function showHelp(ns) {
 		"  --lock-ram <val>  Defines, how much RAM is reserved on the home",
 		"               computer. RAM that is not reserved is used by",
 		"               attk.js to attack a target server.",
+		"",
+		"  --grow-skill <val>  Allocate threads to grow hacking skill.",
 	];
 
 	ns.tprintf("\n%s\n", help.join("\n"));
