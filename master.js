@@ -149,17 +149,16 @@ export async function main(ns) {
 	}
 
 	if ("" !== args["grow-skill"]) {
-		config.skillThreads = parseFloat(args["grow-skill"]) || 0;
-		config.skillThreads = Math.max(config.skillThreads, 0);
+		config.skillRam = parseFloat(args["grow-skill"]) || 0;
+		config.skillRam = Math.max(config.skillRam, 0);
 
-		if (config.skillThreads > 0) {
-			config.skillThreads = Math.max(config.skillThreads, 3);
+		if (config.skillRam > 51) {
+			config.skillRam =
+				Math.max(1, Math.round(config.skillRam / 52)) * 52;
 		}
 		Common.say(
 			ns,
-			`Allocate resources for skill growth: ${config.skillThreads.toFixed(
-				2
-			)} threads`
+			`Allocate RAM for skill growth: ${config.skillRam.toLocaleString()} GB`
 		);
 	}
 
@@ -255,10 +254,11 @@ function showHelp(ns) {
 		"               Sample values: 20k, 250m, 1050b",
 		"",
 		"  --lock-ram <val>  Defines, how much RAM is reserved on the home",
-		"               computer. RAM that is not reserved is used by",
-		"               attk.js to attack a target server.",
+		"               computer. Locked RAM is not used by attk.js or sgrw.js.",
 		"",
-		"  --grow-skill <val>  Allocate threads to grow hacking skill.",
+		"  --grow-skill <val>  Allocate RAM to grow hacking skill. This RAM",
+		"               is not used by attk.js. Minimum value is 52 GB - a",
+		"               value will disable this feature.",
 	];
 
 	ns.tprintf("\n%s\n", help.join("\n"));

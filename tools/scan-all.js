@@ -5,12 +5,13 @@ export async function main(ns) {
 	const args = ns.flags([
 		["help", false],
 		["hacked", false],
+		["own", false],
 		["analyze", false],
 	]);
 
 	if (args.help) {
 		ns.tprint("This script displays all known servers you have access to.");
-		ns.tprint(`Usage: run ${ns.getScriptName()} [--hacked] [--analyze]`);
+		ns.tprint(`Usage: run ${ns.getScriptName()} [--hacked|--own] [--analyze]`);
 		ns.tprint("Example:");
 		ns.tprint(`> run ${ns.getScriptName()} --hacked`);
 		return;
@@ -18,6 +19,10 @@ export async function main(ns) {
 
 	const list = [];
 	const config = Common.getConfig(ns);
+
+	if (args.hacked) {
+		args.own = false;
+	}
 
 	const filterChild = (host) => {
 		if (!host) {
@@ -30,6 +35,8 @@ export async function main(ns) {
 			if (!server.hasAdminRights || server.purchasedByPlayer) {
 				return false;
 			}
+		} else if (args.own) {
+			return server.purchasedByPlayer;
 		}
 
 		return true;
@@ -52,7 +59,7 @@ export async function main(ns) {
 		const requiredSkill = server.requiredHackingSkill.toString();
 
 		if (server.purchasedByPlayer) {
-			infos.push(`${server.ramTotalMax} GB`);
+			infos.push(`${server.ramTotalMaxFormatted}`);
 			infos.push(
 				`${server.cpuCores} core${server.cpuCores > 1 ? "s" : ""}`
 			);

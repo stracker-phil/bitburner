@@ -46,17 +46,19 @@ export async function main(ns) {
 		if (!config.started) {
 			return ns.exit();
 		}
-		if (!config.skillThreads) {
+		if (config.skillRam < 52) {
 			await ns.sleep(10000);
 		}
 
 		log = [];
 		selectTargets(ns);
 
+		const threads = Math.floor(config.skillRam / 5.2 / targets.length);
+
 		for (let i = 0; i < targets.length; i++) {
 			const target = targets[i];
 
-			attackTarget(ns, target, config.skillThreads);
+			attackTarget(ns, target, threads);
 		}
 
 		ns.clearLog();
@@ -106,6 +108,10 @@ function attackTarget(ns, target, maxThreads) {
 		thrGrow = thrHack = Math.max(0, Math.ceil(maxThreads / 3));
 		thrWeak = maxThreads - thrHack - thrGrow;
 	}
+
+	thrHack = Math.max(0, thrHack || 0);
+	thrGrow = Math.max(0, thrGrow || 0);
+	thrWeak = Math.max(0, thrWeak || 0);
 
 	log.push([
 		target.hostname,
