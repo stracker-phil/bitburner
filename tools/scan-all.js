@@ -11,7 +11,9 @@ export async function main(ns) {
 
 	if (args.help) {
 		ns.tprint("This script displays all known servers you have access to.");
-		ns.tprint(`Usage: run ${ns.getScriptName()} [--hacked|--own] [--analyze]`);
+		ns.tprint(
+			`Usage: run ${ns.getScriptName()} [--hacked|--own] [--analyze]`
+		);
 		ns.tprint("Example:");
 		ns.tprint(`> run ${ns.getScriptName()} --hacked`);
 		return;

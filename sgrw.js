@@ -1,5 +1,6 @@
 import * as Common from "lib/common.js";
 import * as Server from "lib/server.js";
+import * as Attack from "lib/attack.js";
 
 /**
  * List of target servers
@@ -18,11 +19,6 @@ let config;
 let attacker = "home";
 
 /**
- * Attack log details.
- */
-let log = [];
-
-/**
  * Centralized attack script that runs a configurable number
  * of attacks against the weakest servers.
  *
@@ -32,7 +28,16 @@ let log = [];
  * @param {NS} ns
  */
 export async function main(ns) {
-	const header = ["Target", "Security", "Money", "Weaken", "Grow", "Hack"];
+	const numTargets = parseInt(ns.args[0] || 5);
+	const header = [
+		"Target",
+		"Security",
+		"Money",
+		"Weaken",
+		"Grow",
+		"Hack",
+		"RAM",
+	];
 	await Server.initialize(ns);
 
 	ns.disableLog("ALL");
@@ -50,89 +55,42 @@ export async function main(ns) {
 			await ns.sleep(10000);
 		}
 
-		log = [];
-		selectTargets(ns);
+		selectTargets(ns, numTargets);
 
-		const threads = Math.floor(config.skillRam / 5.2 / targets.length);
+		const log = [];
+		const maxRam = config.skillRam / targets.length;
+		let duration = 1000;
 
 		for (let i = 0; i < targets.length; i++) {
 			const target = targets[i];
 
-			attackTarget(ns, target, threads);
+			const info = Attack.run(ns, attacker, target.hostname, 0, maxRam);
+			duration = Math.max(duration, info.duration);
+
+			log.push([
+				target.hostname,
+				`${target.hackDifficulty.toFixed(2)} / ${target.minDifficulty}`,
+				`${Common.formatMoney(
+					ns,
+					target.moneyAvailable
+				)} / ${Common.formatMoney(ns, target.moneyMax)}`,
+				info.threadsWeaken,
+				info.threadsGrow,
+				info.threadsHack,
+				Common.formatRam(info.attackRam),
+			]);
 		}
 
 		ns.clearLog();
 		ns.print(Common.printF(log, header));
 
-		await ns.sleep(1000);
+		await ns.sleep(duration);
 	}
 }
 
 /**
- * Selects the attacked target server, either by using
- * the fixed target from the config file, or by
- * calculating the most profitable server.
+ * Selects the best attack targets for gaining experience.
  */
-function selectTargets(ns) {
-	targets = Server.getLowSecurity(ns, 10);
-}
-
-/**
- * Attacks the given target.
- *
- * @param {NS} ns
- */
-function attackTarget(ns, target, maxThreads) {
-	const args = [target.hostname, 0, "skill-grow"];
-	let thrHack;
-	let thrGrow;
-	let thrWeak;
-
-	target.refreshStats(ns);
-
-	const maxSec = target.minDifficulty + 1;
-	const minMoney = parseInt(target.moneyMax * 0.95);
-
-	if (target.hackDifficulty > maxSec) {
-		// Weaken
-		thrWeak = Math.max(0, Math.ceil(maxThreads / 2));
-		thrHack = Math.max(0, Math.floor((maxThreads - thrWeak) / 2));
-		thrGrow = maxThreads - thrWeak - thrHack;
-	} else if (target.moneyAvailable < minMoney) {
-		// Grow
-		thrGrow = Math.max(0, Math.ceil(maxThreads / 2));
-		thrHack = Math.max(0, Math.floor((maxThreads - thrGrow) / 2));
-		thrWeak = maxThreads - thrHack - thrGrow;
-	} else {
-		// Hack
-		thrGrow = thrHack = Math.max(0, Math.ceil(maxThreads / 3));
-		thrWeak = maxThreads - thrHack - thrGrow;
-	}
-
-	thrHack = Math.max(0, thrHack || 0);
-	thrGrow = Math.max(0, thrGrow || 0);
-	thrWeak = Math.max(0, thrWeak || 0);
-
-	log.push([
-		target.hostname,
-		`${target.hackDifficulty.toFixed(2)} / ${target.minDifficulty}`,
-		`${Common.formatMoney(
-			ns,
-			target.moneyAvailable
-		)} / ${Common.formatMoney(ns, target.moneyMax)}`,
-		thrWeak,
-		thrGrow,
-		thrHack,
-	]);
-
-	// Constantly keep all scripts running.
-	if (thrWeak && !ns.isRunning("run-weaken.js", attacker, ...args)) {
-		ns.exec("run-weaken.js", attacker, thrWeak, ...args);
-	}
-	if (thrGrow && !ns.isRunning("run-grow.js", attacker, ...args)) {
-		ns.exec("run-grow.js", attacker, thrGrow, ...args);
-	}
-	if (thrHack && !ns.isRunning("run-hack.js", attacker, ...args)) {
-		ns.exec("run-hack.js", attacker, thrHack, ...args);
-	}
+function selectTargets(ns, limit) {
+	targets = Server.getLowSecurity(ns, limit);
 }

@@ -1,6 +1,7 @@
 import * as Common from "lib/common.js";
 import * as Server from "lib/server.js";
 import * as Player from "lib/player.js";
+import * as Attack from "lib/attack.js";
 
 /**
  * Player instance.
@@ -17,13 +18,14 @@ let target;
  */
 let config;
 
+/**
+ * Focus of the next attack.
+ */
 let attack = "weaken";
 
 /**
  * Predicted changes in target server security after an attack.
  */
-const changeHack = 0.002;
-const changeGrow = 0.004;
 const changeWeaken = 0.05;
 
 /**
@@ -66,11 +68,9 @@ export async function main(ns) {
 			return ns.exit();
 		}
 
-		chooseAction(ns);
-
 		explainAttack(ns);
 
-		const duration = await coordinateAttack(ns);
+		const duration = Math.max(3000, await coordinateAttack(ns));
 
 		await ns.sleep(duration + 100);
 
@@ -102,7 +102,6 @@ function explainAttack(ns) {
 	const lines = [
 		"Attack details:",
 		`  - Target server:   ${target.hostname}`,
-		`  - Attack mode:     ${attack}`,
 		`  - Profit rating:   [${
 			target.profitRating
 		}] ${target.profitValue.toLocaleString()}`,
@@ -145,11 +144,13 @@ async function selectTarget(ns) {
 }
 
 /**
- * Decide on the attack focus (hack, grow, weaken).
+ * Performs the prepared attack against the target server.
+ *
  * @param {NS} ns
  */
-function chooseAction(ns) {
+async function coordinateAttack(ns) {
 	target.refreshStats(ns);
+	let duration = 1000;
 
 	const maxSec = parseFloat(
 		(target.minDifficulty + config.boundSec).toFixed(4)
@@ -157,35 +158,22 @@ function chooseAction(ns) {
 	const minMoney = parseInt(target.moneyMax * config.boundMoney);
 
 	if (target.hackDifficulty > maxSec) {
-		attack = "weaken";
+		duration = await doAttackWeaken(ns);
 	} else if (target.moneyAvailable < minMoney) {
-		attack = "grow";
+		duration = await doAttackGrow(ns);
 	} else {
-		attack = "hack";
-	}
-}
-
-/**
- * Performs the prepared attack against the target server.
- *
- * @param {NS} ns
- */
-async function coordinateAttack(ns) {
-	let duration = 0;
-
-	switch (attack) {
-		case "weaken":
-			duration = await doAttackWeaken(ns);
-			break;
-		case "grow":
-			duration = await doAttackGrow(ns);
-			break;
-		default:
-			duration = await doAttackHack(ns);
-			break;
+		duration = await doAttackHack(ns);
 	}
 
 	return Math.ceil(duration);
+
+	let info = target.hostname;
+
+	await Server.allAttackers((server) => {
+		info = Attack.run(ns, server.hostname, info, 0, server.ramFree);
+	});
+
+	return Math.ceil(20 + info.duration);
 }
 
 /**
@@ -443,6 +431,14 @@ async function doAttackHack(ns, attDelay) {
 		}
 	}
 
+	/**
+	 * 25 hacks need 1 weaken
+	 * 12.5 grows need 1 weaken
+	 */
+	const numHack = 1; // 25;
+	const numGrow = 1; // 12;
+	const batchRam = numHack * 1.7 + numGrow * 1.75 + 2 * 1.75;
+
 	function nextStep(server, threads, runStep) {
 		const manualStep = !!runStep;
 		let nextStep, script, ramNeeded, startAfter;
@@ -458,6 +454,7 @@ async function doAttackHack(ns, attDelay) {
 			case "H":
 				script = "hack";
 				startAfter = startHack;
+				threads *= numHack;
 				ramNeeded = 1.7;
 				nextStep = "W1";
 				break;
@@ -470,6 +467,7 @@ async function doAttackHack(ns, attDelay) {
 			case "G":
 				script = "grow";
 				startAfter = startGrow;
+				threads *= numGrow;
 				ramNeeded = 1.75;
 				nextStep = "W2";
 				break;
@@ -484,12 +482,14 @@ async function doAttackHack(ns, attDelay) {
 		ramNeeded *= threads;
 
 		server.refreshRam(ns);
+
+		if (server.ramFree < ramNeeded) {
+			return false;
+		}
+
 		// When no more RAM available on this server,
 		// we'll continue the batch on the next server.
-		if (
-			server.ramFree >= ramNeeded &&
-			server.attack(ns, script, threads, target.hostname, startAfter)
-		) {
+		if (server.attack(ns, script, threads, target.hostname, startAfter)) {
 			totalThreads[step] += threads;
 			step = nextStep;
 			totalRam += ramNeeded;
@@ -508,7 +508,8 @@ async function doAttackHack(ns, attDelay) {
 
 	// Run 1: Start batches with max-threads on every server.
 	await Server.allAttackers(async (server) => {
-		const threads = Math.floor(server.ramFree / 6.95);
+		const threads = Math.floor(server.ramFree / batchRam);
+		console.log("HWGW Start:", server.hostname, threads);
 
 		if ("H" !== step) {
 			console.error(
