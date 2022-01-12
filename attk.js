@@ -24,6 +24,11 @@ let config;
 let attack = "weaken";
 
 /**
+ * List of attack threads.
+ */
+let jobs = [];
+
+/**
  * Predicted changes in target server security after an attack.
  */
 const changeWeaken = 0.05;
@@ -68,8 +73,6 @@ export async function main(ns) {
 			return ns.exit();
 		}
 
-		explainAttack(ns);
-
 		const duration = Math.max(3000, await coordinateAttack(ns));
 
 		await ns.sleep(duration + 100);
@@ -83,8 +86,11 @@ export async function main(ns) {
  * Output some details about the current attack.
  *
  * @param {NS} ns
+ * @param {array} jobs - List of attack threads
  */
-function explainAttack(ns) {
+function explainAttack(ns, info) {
+	target.refreshStats(ns);
+
 	const wakeUpTime = Common.timestamp(target.timeWeaken + 300);
 	const minSecurity = target.minDifficulty.toFixed(2);
 	const curSecurity = target.hackDifficulty.toFixed(2);
@@ -98,6 +104,71 @@ function explainAttack(ns) {
 	const timeGrow = ns.tFormat(target.timeGrow);
 	const delayHack = ns.tFormat(target.delayHack);
 	const delayGrow = ns.tFormat(target.delayGrow);
+
+	let table = "";
+	let totalWeaken = 0;
+	let totalGrow = 0;
+	let totalHack = 0;
+
+	if (jobs && jobs.length) {
+		const tableHead = [
+			"Source",
+			"PID",
+			"Type",
+			"Threads",
+			"RAM",
+			"Duration",
+		];
+		const tableFormat = ["left", "left", "left", "right", "right", "right"];
+		const tableRows = [];
+
+		for (let i = 0; i < jobs.length; i++) {
+			const job = jobs[i];
+
+			tableRows.push([
+				job.source,
+				`${job.stage[0].toUpperCase()}-${job.pid}`,
+				job.type,
+				parseInt(job.threads).toLocaleString(),
+				Common.formatRam(job.ram),
+				Common.formatTime(job.duration, false, true),
+			]);
+
+			if ("weaken" === job.type) {
+				totalWeaken += job.threads;
+			} else if ("grow" === job.type) {
+				totalGrow += job.threads;
+			} else if ("hack" === job.type) {
+				totalHack += job.threads;
+			}
+		}
+
+		table = Common.printF(tableRows, tableHead, tableFormat);
+	}
+
+	let totalThreads = totalWeaken + totalGrow + totalHack;
+	let totalWeakenPct = 0;
+	let totalGrowPct = 0;
+	let totalHackPct = 0;
+
+	if (totalThreads > 0) {
+		totalWeakenPct = Math.round((totalWeaken / totalThreads) * 100);
+		totalGrowPct = Math.round((totalGrow / totalThreads) * 100);
+		totalHackPct = Math.round((totalHack / totalThreads) * 100);
+	}
+
+	let totalWeakenFmt = totalWeaken.toLocaleString();
+	let totalGrowFmt = totalGrow.toLocaleString();
+	let totalHackFmt = totalHack.toLocaleString();
+	let totalLength = Math.max(
+		totalWeakenFmt.length,
+		totalGrowFmt.length,
+		totalHackFmt.length
+	);
+	totalWeakenFmt =
+		" ".repeat(totalLength - totalWeakenFmt.length) + totalWeakenFmt;
+	totalGrowFmt = " ".repeat(totalLength - totalGrowFmt.length) + totalGrowFmt;
+	totalHackFmt = " ".repeat(totalLength - totalHackFmt.length) + totalHackFmt;
 
 	const lines = [
 		"Attack details:",
@@ -116,10 +187,51 @@ function explainAttack(ns) {
 		`  - Grow delay:      ${delayGrow}`,
 		`  - Wake up time     ${wakeUpTime}`,
 		"",
+		`  - Weaken:    ${totalWeakenFmt} (${totalWeakenPct}%)`,
+		`  - Grow:      ${totalGrowFmt} (${totalGrowPct}%)`,
+		`  - Hack:      ${totalHackFmt} (${totalHackPct}%)`,
+		"",
+		table,
 	];
 
 	ns.clearLog();
 	ns.print(lines.join("\n"));
+}
+
+function _logJob(pid, stage, server, threads, start, duration, ram, type) {
+	if (pid) {
+		jobs.push({
+			pid,
+			source: server.hostname,
+			stage: stage,
+			type,
+			threads,
+			ram: threads * ram,
+			start,
+			duration: start + duration,
+		});
+	}
+}
+
+function logJobHack(pid, stage, server, threads, start) {
+	_logJob(pid, stage, server, threads, start, target.timeHack, 1.7, "hack");
+}
+
+function logJobGrow(pid, stage, server, threads, start) {
+	_logJob(pid, stage, server, threads, start, target.timeGrow, 1.75, "grow");
+}
+
+function logJobWeaken(pid, stage, server, threads, start) {
+	_logJob(
+		pid,
+		stage,
+		server,
+		threads,
+		start,
+		target.timeWeaken,
+		1.75,
+		"weaken"
+	);
 }
 
 /**
@@ -152,6 +264,8 @@ async function coordinateAttack(ns) {
 	target.refreshStats(ns);
 	let duration = 1000;
 
+	jobs = [];
+
 	const maxSec = parseFloat(
 		(target.minDifficulty + config.boundSec).toFixed(4)
 	);
@@ -165,15 +279,21 @@ async function coordinateAttack(ns) {
 		duration = await doAttackHack(ns);
 	}
 
+	explainAttack(ns);
+
 	return Math.ceil(duration);
 
+	/*
 	let info = target.hostname;
 
-	await Server.allAttackers((server) => {
-		info = Attack.run(ns, server.hostname, info, 0, server.ramFree);
+	await Server.allAttackers(async (server) => {
+		if('profit' !== server.focus) { return}
+		info = await Attack.run(ns, server.hostname, info, server.ramFree);
 	});
+	explainAttack(ns, info);
 
 	return Math.ceil(20 + info.duration);
+	*/
 }
 
 /**
@@ -201,19 +321,22 @@ async function doAttackWeaken(ns) {
 
 	const secDiff = target.hackDifficulty - target.minDifficulty;
 	let threadsWeaken = Math.ceil(secDiff / changeWeaken);
-
-	let weakenCycles = 0;
-	let totalBatches = 0;
 	let unusedResources = false;
-	let totalRam = 0;
 
 	duration = target.timeWeaken + 20;
 
 	function runWeaken(server, threads) {
-		return server.attack(ns, "weaken", threads, target.hostname, 0);
+		const pid = server.attack(ns, "weaken", threads, target.hostname, 0);
+
+		logJobWeaken(pid, "weaken", server, threads, 0);
+
+		return pid;
 	}
 
 	await Server.allAttackers(async (server) => {
+		if ("profit" !== server.focus) {
+			return;
+		}
 		server.refreshRam(ns);
 
 		let maxThreads = server.calcThreads(ns, "run-weaken.js");
@@ -225,11 +348,8 @@ async function doAttackWeaken(ns) {
 		if (maxThreads && threadsWeaken > 0) {
 			const threads = Math.min(maxThreads, threadsWeaken);
 			if (runWeaken(server, threads)) {
-				totalBatches++;
 				threadsWeaken -= threads;
 				maxThreads -= threads;
-				weakenCycles += threads;
-				totalRam += 1.75 * threads;
 			}
 		}
 
@@ -241,16 +361,6 @@ async function doAttackWeaken(ns) {
 			unusedResources = true;
 		}
 	});
-
-	// Explain what will happen.
-	totalRam = parseInt(totalRam);
-	const lines = [
-		"Weaken attack threads:",
-		`- Weaken:   ${weakenCycles.toLocaleString()}`,
-		`- Batches:  ${totalBatches.toLocaleString()}`,
-		`- RAM used: ${totalRam.toLocaleString()} GB RAM`,
-	];
-	ns.print(lines.join("\n"));
 
 	/*
 	 * When resources are left after weakening the server to minimum,
@@ -285,24 +395,38 @@ async function doAttackGrow(ns, attDelay) {
 	let startWeak = attDelay + 20 + maxTime - timeWeaken;
 	const minStart = Math.min(startWeak, startGrow);
 
-	let growCycles = 0;
-	let weakCycles = 0;
-	let totalBatches = 0;
 	let unusedResources = false;
-	let totalRam = 0;
 
 	startGrow = startGrow - minStart;
 	startWeak = startWeak - minStart;
 	duration = attDelay + maxTime + 40;
 
 	function runGrowWeaken(server, thrGrow, thrWeak) {
-		return (
-			server.attack(ns, "weaken", thrWeak, target.hostname, startWeak) &&
-			server.attack(ns, "grow", thrGrow, target.hostname, startGrow)
+		const pidGrow = server.attack(
+			ns,
+			"grow",
+			thrGrow,
+			target.hostname,
+			startGrow
 		);
+		const pidWeak = server.attack(
+			ns,
+			"weaken",
+			thrWeak,
+			target.hostname,
+			startWeak
+		);
+
+		logJobGrow(pidGrow, "grow", server, thrGrow, startGrow);
+		logJobWeaken(pidWeak, "grow", server, thrWeak, startWeak);
+
+		return pidWeak && pidGrow;
 	}
 
 	await Server.allAttackers(async (server) => {
+		if ("profit" !== server.focus) {
+			return;
+		}
 		server.refreshRam(ns);
 
 		let maxThreads = server.calcThreads(ns, "run-weaken.js");
@@ -317,12 +441,8 @@ async function doAttackGrow(ns, attDelay) {
 			const thrWeak = Math.floor(threads / 2);
 
 			if (runGrowWeaken(server, thrGrow, thrWeak)) {
-				totalBatches++;
 				threadsGrow -= threads;
 				maxThreads -= threads;
-				growCycles += thrGrow;
-				weakCycles += thrWeak;
-				totalRam += 2 * 1.75 * threads;
 			}
 		}
 
@@ -334,17 +454,6 @@ async function doAttackGrow(ns, attDelay) {
 			unusedResources = true;
 		}
 	});
-
-	// Explain what will happen.
-	totalRam = parseInt(totalRam);
-	const lines = [
-		"Grow attack threads:",
-		`- Grow:     ${growCycles.toLocaleString()}`,
-		`- Weaken:   ${weakCycles.toLocaleString()}`,
-		`- Batches:  ${totalBatches.toLocaleString()}`,
-		`- RAM used: ${totalRam.toLocaleString()} GB RAM`,
-	];
-	ns.print(lines.join("\n"));
 
 	/*
 	 * When resources are left after growing the server to maximum,
@@ -385,20 +494,11 @@ async function doAttackHack(ns, attDelay) {
 	const maxTime = Math.max(timeWeaken, timeGrow, timeHack);
 
 	let delay = attDelay;
-	let totalBatches = 0;
 	let batchesInCycle = 0;
-	let totalRam = 0;
 	let totalCycles = 1;
 	let duration = 0;
 
-	let step, startHack, startWeak1, startGrow, startWeak2, minStart;
-
-	const totalThreads = {
-		H: 0,
-		G: 0,
-		W1: 0,
-		W2: 0,
-	};
+	let step, startHack, startGrow, startWeak, minStart;
 
 	function nextCycle() {
 		totalCycles++;
@@ -407,19 +507,16 @@ async function doAttackHack(ns, attDelay) {
 	}
 
 	function nextBatch() {
-		totalBatches++;
 		batchesInCycle++;
 		step = "H";
 
 		startHack = maxTime - timeHack;
-		startWeak1 = 20 + maxTime - timeWeaken;
-		startGrow = 40 + maxTime - timeGrow;
-		startWeak2 = 60 + maxTime - timeWeaken;
-		minStart = Math.min(startHack, startWeak1, startGrow, startWeak2);
+		startGrow = 20 + maxTime - timeGrow;
+		startWeak = 40 + maxTime - timeWeaken;
+		minStart = Math.min(startHack, startWeak, startGrow);
 		startHack = delay + startHack - minStart;
-		startWeak1 = delay + startWeak1 - minStart;
 		startGrow = delay + startGrow - minStart;
-		startWeak2 = delay + startWeak2 - minStart;
+		startWeak = delay + startWeak - minStart;
 
 		duration = getDuration(duration, 80 + delay + maxTime);
 
@@ -435,13 +532,13 @@ async function doAttackHack(ns, attDelay) {
 	 * 25 hacks need 1 weaken
 	 * 12.5 grows need 1 weaken
 	 */
-	const numHack = 1; // 25;
-	const numGrow = 1; // 12;
+	const numHack = 5; // 25;
+	const numGrow = 2; // 12;
 	const batchRam = numHack * 1.7 + numGrow * 1.75 + 2 * 1.75;
 
 	function nextStep(server, threads, runStep) {
 		const manualStep = !!runStep;
-		let nextStep, script, ramNeeded, startAfter;
+		let fnLog, nextStep, script, ramNeeded, startAfter;
 
 		if (isNaN(threads) || threads < 1) {
 			threads = 1;
@@ -456,26 +553,23 @@ async function doAttackHack(ns, attDelay) {
 				startAfter = startHack;
 				threads *= numHack;
 				ramNeeded = 1.7;
-				nextStep = "W1";
-				break;
-			case "W1":
-				script = "weaken";
-				startAfter = startWeak1;
-				ramNeeded = 1.75;
 				nextStep = "G";
+				fnLog = logJobHack;
 				break;
 			case "G":
 				script = "grow";
 				startAfter = startGrow;
 				threads *= numGrow;
 				ramNeeded = 1.75;
-				nextStep = "W2";
+				nextStep = "W";
+				fnLog = logJobGrow;
 				break;
-			case "W2":
+			case "W":
 				script = "weaken";
-				startAfter = startWeak2;
+				startAfter = startWeak;
 				ramNeeded = 1.75;
 				nextStep = "H";
+				fnLog = logJobWeaken;
 				break;
 		}
 
@@ -484,17 +578,24 @@ async function doAttackHack(ns, attDelay) {
 		server.refreshRam(ns);
 
 		if (server.ramFree < ramNeeded) {
-			return false;
+			return false;Ì
 		}
+
+		const pid = server.attack(
+			ns,
+			script,
+			threads,
+			target.hostname,
+			startAfter
+		);
 
 		// When no more RAM available on this server,
 		// we'll continue the batch on the next server.
-		if (server.attack(ns, script, threads, target.hostname, startAfter)) {
-			totalThreads[step] += threads;
+		if (pid) {
+			fnLog(pid, "hack", server, threads, startAfter);
 			step = nextStep;
-			totalRam += ramNeeded;
 
-			if (!step || "H" === step) {
+			if (!step || "H" === nextStep) {
 				nextBatch();
 			}
 
@@ -508,46 +609,19 @@ async function doAttackHack(ns, attDelay) {
 
 	// Run 1: Start batches with max-threads on every server.
 	await Server.allAttackers(async (server) => {
-		const threads = Math.floor(server.ramFree / batchRam);
-		console.log("HWGW Start:", server.hostname, threads);
-
-		if ("H" !== step) {
-			console.error(
-				`HWGW attack got out of sync! Starting with step ${step} on ${server.hostname}`
-			);
+		if ("profit" !== server.focus) {
+			return;
 		}
+		const threads = Math.floor(server.ramFree / batchRam);
 
 		if (threads < 1) {
 			return;
 		}
 
 		nextStep(server, threads, "H");
-		nextStep(server, threads, "W1");
 		nextStep(server, threads, "G");
-		nextStep(server, threads, "W2");
+		nextStep(server, threads, "W");
 	});
-
-	// Run 2: Start distributed, single-thread batches to use all resources.
-	await Server.allAttackers(async (server) => {
-		let success = true;
-
-		while (success) {
-			success = nextStep(server);
-		}
-	});
-
-	// Explain what will happen.
-	totalRam = parseInt(totalRam);
-	const lines = [
-		"HWGW attack details:",
-		`- Hack:     ${totalThreads.H.toLocaleString()}`,
-		`- Weaken:   ${totalThreads.W1.toLocaleString()}`,
-		`- Grow:     ${totalThreads.G.toLocaleString()}`,
-		`- Weaken:   ${totalThreads.W2.toLocaleString()}`,
-		`- Batches:  ${totalBatches.toLocaleString()}`,
-		`- RAM used: ${totalRam.toLocaleString()} GB RAM`,
-	];
-	ns.print(lines.join("\n"));
 
 	return duration;
 }

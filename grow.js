@@ -53,7 +53,7 @@ export async function main(ns) {
  *   - Update Hacknet Node RAM
  *   - Update Hacknet Node Level
  *   - Update Hacknet Node Core
- * 
+ *
  * NS4:
  *   - todo: Update Hacknet Server Cache
  *   - todo: Purchase TOR router
@@ -106,13 +106,6 @@ async function growNetwork(ns) {
 					`Spent ${Common.formatMoney(ns, spent)}`
 				);
 			}
-
-			// Dump a list of unaffordable upgrades to the console.
-			console.log(
-				"List of unaffordable upgrades:",
-				getAvailableUpgrades(ns)
-			);
-
 			break;
 		}
 

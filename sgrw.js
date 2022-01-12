@@ -1,96 +1,182 @@
-import * as Common from "lib/common.js";
 import * as Server from "lib/server.js";
-import * as Attack from "lib/attack.js";
 
-/**
- * List of target servers
- */
-let targets = [];
-
-/**
- * Config instance.
- */
-let config;
-
-/**
- * The attacking server. Only a single server will
- * initiate attacks against all targets.
- */
-let attacker = "home";
-
-/**
- * Centralized attack script that runs a configurable number
- * of attacks against the weakest servers.
- *
- * The goal of this script is a constant skill growth, and
- * not profit maximization.
- *
- * @param {NS} ns
- */
+/** @param {NS} ns **/
 export async function main(ns) {
-	const numTargets = parseInt(ns.args[0] || 5);
-	const header = [
-		"Target",
-		"Security",
-		"Money",
-		"Weaken",
-		"Grow",
-		"Hack",
-		"RAM",
-	];
+	ns.disableLog("ALL");
+	ns.enableLog("print");
+
+	const options = ns.flags([
+		["kill", false],
+		["hack", false],
+		["grow", false],
+		["weaken", false],
+		["waitTime", 10],
+		["help", false],
+	]);
+
+	if (options["help"]) {
+		ns.tail();
+		ns.print(`Auto-script, options:
+	  * --kill: Force kill every other process on every servers
+	  * --hack some-script.js: Replace hack script with some-script.js one
+	  * --grow some-script.js: Replace grow script with some-script.js one
+	  * --weaken some-script.js: Replace weaken script with some-script.js one
+	  * --waitTime 10: Wait time between two servers in ms, must be higher than 1
+	  * --help: show this message
+	  `);
+		return;
+	}
+
+	// Creating scripts
+	const hack = options["hack"] || "/temp/hack.js",
+		grow = options["grow"] || "/temp/grow.js",
+		weaken = options["weaken"] || "/temp/weaken.js";
+
+	if (!options["hack"]) {
+		await ns.write(
+			hack,
+			`
+		/** @param {NS} ns **/
+		export async function main(ns) {
+			await ns.hack(ns.args[0]);
+			await ns.hack(ns.args[0]);
+			await ns.grow(ns.args[0]);
+			await ns.weaken(ns.args[0]);
+		}
+	  `,
+			"w"
+		);
+	}
+	if (!options["grow"]) {
+		await ns.write(
+			grow,
+			`
+		/** @param {NS} ns **/
+		export async function main(ns) {
+			await ns.grow(ns.args[0]);
+		}
+	  `,
+			"w"
+		);
+	}
+	if (!options["weaken"]) {
+		await ns.write(
+			weaken,
+			`
+		/** @param {NS} ns **/
+		export async function main(ns) {
+			await ns.weaken(ns.args[0]);
+		}
+	  `,
+			"w"
+		);
+	}
+
+	// Divs variables declarations
+	let attackTargets = [],
+		attackers = [],
+		hackables = [],
+		growables = [],
+		weakenables = [],
+		proxyTarget,
+		hackType;
+
 	await Server.initialize(ns);
 
-	ns.disableLog("ALL");
-	ns.clearLog();
-
-	attacker = ns.getHostname();
-
-	while (true) {
-		config = Common.getConfig(ns);
-
-		if (!config.started) {
-			return ns.exit();
-		}
-		if (config.skillRam < 52) {
-			await ns.sleep(10000);
-		}
-
-		selectTargets(ns, numTargets);
-
-		const log = [];
-		const maxRam = config.skillRam / targets.length;
-		let duration = 1000;
-
-		for (let i = 0; i < targets.length; i++) {
-			const target = targets[i];
-
-			const info = Attack.run(ns, attacker, target.hostname, 0, maxRam);
-			duration = Math.max(duration, info.duration);
-
-			log.push([
-				target.hostname,
-				`${target.hackDifficulty.toFixed(2)} / ${target.minDifficulty}`,
-				`${Common.formatMoney(
-					ns,
-					target.moneyAvailable
-				)} / ${Common.formatMoney(ns, target.moneyMax)}`,
-				info.threadsWeaken,
-				info.threadsGrow,
-				info.threadsHack,
-				Common.formatRam(info.attackRam),
-			]);
-		}
-
-		ns.clearLog();
-		ns.print(Common.printF(log, header));
-
-		await ns.sleep(duration);
+	// Find potential attack targets.
+	const targetServers = Server.getLowSecurity(ns, -1);
+	for (const key in targetServers) {
+		attackTargets.push(targetServers[key].hostname);
 	}
-}
 
-/**
- * Selects the best attack targets for gaining experience.
- */
-function selectTargets(ns, limit) {
-	targets = Server.getLowSecurity(ns, limit);
+	// Prepare attacking servers.
+	await Server.allAttackers(async (server) => {
+		if ("skill" !== server.focus) {
+			return;
+		}
+		await ns.scp([hack, grow, weaken], "home", server.hostname);
+		if (options["kill"]) {
+			ns.killall(server.hostname);
+		}
+		attackers.push(server.hostname);
+	});
+
+	if (attackTargets.length > 0) {
+		while (true) {
+			hackables = [];
+			growables = [];
+			weakenables = [];
+
+			for (const target of attackTargets) {
+				// Priority for targets: weaken, then grow, then hack
+				if (
+					ns.getServerSecurityLevel(target) >
+					ns.getServerMinSecurityLevel(target) + 5
+				) {
+					hackType = weaken;
+					weakenables.push(target);
+				} else if (
+					ns.getServerMoneyAvailable(target) <
+					ns.getServerMaxMoney(target) * 0.8
+				) {
+					hackType = grow;
+					growables.push(target);
+				} else {
+					hackType = hack;
+					hackables.push(target);
+				}
+			}
+
+			for (let i = 0; i < attackers.length; i++) {
+				const proxy = attackers[i];
+
+				// Priority for proxies: weaken -> grow -> hack
+				if (weakenables.length > 0) {
+					proxyTarget =
+						weakenables[
+							Math.floor(Math.random() * weakenables.length)
+						];
+					hackType = weaken;
+				} else if (growables.length > 0) {
+					proxyTarget =
+						growables[Math.floor(Math.random() * growables.length)];
+					hackType = grow;
+				} else if (hackables.length > 0) {
+					proxyTarget =
+						hackables[Math.floor(Math.random() * hackables.length)];
+					hackType = hack;
+				}
+
+				if (
+					ns.getServerMaxRam(proxy) - ns.getServerUsedRam(proxy) >
+					ns.getScriptRam(hackType)
+				) {
+					ns.exec(
+						hackType,
+						proxy,
+						Math.floor(
+							(ns.getServerMaxRam(proxy) -
+								ns.getServerUsedRam(proxy)) /
+								ns.getScriptRam(hackType)
+						),
+						proxyTarget
+					);
+					ns.print(
+						"|||||||||| proxy --> " +
+							proxy +
+							" --> " +
+							hackType +
+							" --> " +
+							proxyTarget +
+							" ||||||||||"
+					);
+				}
+			}
+
+			// Await n ms between each servers to avoid issue with the infinite loop
+			await ns.sleep(options["waitTime"]);
+		}
+	} else {
+		ns.tprint("Error: No attackable servers found.");
+	}
 }
