@@ -1,0 +1,22 @@
+GROWTH PHASE  (less than 1TB home RAM):
+============
+
+This script will do:
+
+  1. Spawn "grow.sh" to increase income via hacknet nodes
+  2. Distribute "sgrw.sh" to all hacked servers
+  3. Spawn "attk.sh" to focus attacks on a target server
+  4. Run "sgrw.sh" on all hacked servers
+
+Next steps:
+
+* Get reputation and money by solving contracts
+* Purchase Augmentations from CyberSec
+* Purchase additional servers to use attk.js
+
+Notes:
+
+* Kill "grow.js" if "contract.js" needs more RAM
+* Run "master" again after purchasing a program on the darknet
+* Use "master --lock-money 0" to increase your income and purchase
+  new servers as soon as possible.

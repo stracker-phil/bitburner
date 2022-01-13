@@ -281,7 +281,7 @@ function getAvailableUpgrades(ns) {
 	*/
 
 	// Purchase new hacknet nodes.
-	if (nodesCount < nodesMax) {
+	if (serverList.length >= 8 || nodesCount < 8) {
 		actions.push({
 			action: "add_node",
 			cost: ns.hacknet.getPurchaseNodeCost(),
@@ -293,6 +293,11 @@ function getAvailableUpgrades(ns) {
 		const costLevel = ns.hacknet.getLevelUpgradeCost(i, nodeStepLevel);
 		const costRam = ns.hacknet.getRamUpgradeCost(i, nodeStepCore);
 		const costCore = ns.hacknet.getCoreUpgradeCost(i, nodeStepRam);
+
+		if (serverList.length < 8 && costLevel > 100000) {
+			// When hacknet nodes are big enough, focus on custom servers for a while.
+			continue;
+		}
 
 		if (costLevel && Infinity !== costLevel) {
 			actions.push({

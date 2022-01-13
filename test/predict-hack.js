@@ -12,7 +12,7 @@ export async function main(ns) {
 	const moneyLeft = Math.max(moneyMax / 100, moneyMax - stolen);
 	const growFactor = Math.max(1, moneyMax / moneyLeft);
 
-	// Values are only correct, when target has maxed out money.
+	// Values are only correct, when target has maxed out money and minimal security.
 
 	ns.tprint("Money Max:    " + moneyMax);
 	ns.tprint("Steal 10% A:  " + hack10p1 + " hacks");

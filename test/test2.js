@@ -1,4 +1,4 @@
-import * as Attack from "lib/attack.js";
+import * as Attack from "test/lib-attack.js";
 
 /** @param {NS} ns **/
 export async function main(ns) {

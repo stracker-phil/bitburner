@@ -1,0 +1,21 @@
+INITIAL PHASE  (less then 64GB home RAM):
+=============
+
+This script will do:
+
+  1. Spawn "grow.sh" to increase income via hacknet nodes
+  2. Distribute "sgrw.sh" to all hacked servers
+  3. Run "sgrw.sh" on all hacked servers
+
+Next steps:
+
+* Visit "Rothman University" and grow hacking skill, until level 125
+* Start working at Carmichael Security in "Software Consultant Job"
+* Purchase TOR Router and buy BruteSSH.exe to hack the CSEC server
+* Join CyberSec and work on Hacking Contracts to access Augmentations
+* Save $ 10.000m to upgrade home RAM to 64 GB
+
+Notes:
+
+* Run "master" again after purchasing a program on the darknet
+* Use "master --lock-money 10.000m" to prevent automatic re-investment

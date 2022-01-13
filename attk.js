@@ -1,7 +1,6 @@
 import * as Common from "lib/common.js";
 import * as Server from "lib/server.js";
 import * as Player from "lib/player.js";
-import * as Attack from "lib/attack.js";
 
 /**
  * Player instance.
@@ -17,11 +16,6 @@ let target;
  * Config instance.
  */
 let config;
-
-/**
- * Focus of the next attack.
- */
-let attack = "weaken";
 
 /**
  * List of attack threads.
@@ -117,6 +111,7 @@ function explainAttack(ns, info) {
 			"Type",
 			"Threads",
 			"RAM",
+			"Start",
 			"Duration",
 		];
 		const tableFormat = ["left", "left", "left", "right", "right", "right"];
@@ -131,6 +126,7 @@ function explainAttack(ns, info) {
 				job.type,
 				parseInt(job.threads).toLocaleString(),
 				Common.formatRam(job.ram),
+				Common.formatTime(job.start, false, true),
 				Common.formatTime(job.duration, false, true),
 			]);
 
@@ -185,7 +181,7 @@ function explainAttack(ns, info) {
 		`  - Time to grow:    ${timeGrow}`,
 		`  - Hack delay:      ${delayHack}`,
 		`  - Grow delay:      ${delayGrow}`,
-		`  - Wake up time     ${wakeUpTime}`,
+		`  - Next attack at:  ${wakeUpTime}`,
 		"",
 		`  - Weaken:    ${totalWeakenFmt} (${totalWeakenPct}%)`,
 		`  - Grow:      ${totalGrowFmt} (${totalGrowPct}%)`,
@@ -282,18 +278,6 @@ async function coordinateAttack(ns) {
 	explainAttack(ns);
 
 	return Math.ceil(duration);
-
-	/*
-	let info = target.hostname;
-
-	await Server.allAttackers(async (server) => {
-		if('profit' !== server.focus) { return}
-		info = await Attack.run(ns, server.hostname, info, server.ramFree);
-	});
-	explainAttack(ns, info);
-
-	return Math.ceil(20 + info.duration);
-	*/
 }
 
 /**
@@ -334,11 +318,8 @@ async function doAttackWeaken(ns) {
 	}
 
 	await Server.allAttackers(async (server) => {
-		if ("profit" !== server.focus) {
-			return;
-		}
 		server.refreshRam(ns);
-
+		
 		let maxThreads = server.calcThreads(ns, "run-weaken.js");
 
 		/**
@@ -384,7 +365,7 @@ async function doAttackGrow(ns, attDelay) {
 	let duration = 0;
 
 	attDelay = parseInt(attDelay) || 0;
-	const maxGrowRate = target.moneyMax / target.moneyAvailable;
+	const maxGrowRate = target.moneyMax / 1 + target.moneyAvailable;
 	let threadsGrow = Math.ceil(ns.growthAnalyze(target.hostname, maxGrowRate));
 
 	const timeWeaken = target.timeWeaken;
@@ -424,9 +405,6 @@ async function doAttackGrow(ns, attDelay) {
 	}
 
 	await Server.allAttackers(async (server) => {
-		if ("profit" !== server.focus) {
-			return;
-		}
 		server.refreshRam(ns);
 
 		let maxThreads = server.calcThreads(ns, "run-weaken.js");
@@ -578,7 +556,8 @@ async function doAttackHack(ns, attDelay) {
 		server.refreshRam(ns);
 
 		if (server.ramFree < ramNeeded) {
-			return false;Ì
+			return false;
+			Ì;
 		}
 
 		const pid = server.attack(
@@ -609,9 +588,6 @@ async function doAttackHack(ns, attDelay) {
 
 	// Run 1: Start batches with max-threads on every server.
 	await Server.allAttackers(async (server) => {
-		if ("profit" !== server.focus) {
-			return;
-		}
 		const threads = Math.floor(server.ramFree / batchRam);
 
 		if (threads < 1) {

@@ -1,13 +1,7 @@
-/** @param {NS} ns **/
 export async function main(ns) {
-	const target = ns.args[0];
-	const delay = ns.args[1];
-
-	if (delay && delay > 0) {
-		await ns.sleep(delay);
+	if (ns.args[1] > 0) {
+		await ns.sleep(ns.args[1]);
 	}
 
-	ns.print(`Starting operation: hack on ${target}`);
-	const profit = await ns.hack(target, { stock: true });
-	await ns.writePort(1, profit);
+	await ns.writePort(1, await ns.hack(ns.args[0]));
 }

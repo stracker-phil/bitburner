@@ -32,15 +32,10 @@ let config = {};
  * @param {NS} ns
  */
 export async function main(ns) {
-	ns.tprint("");
-	ns.tprint("---------- START ----------");
-
-	if (!ns.args.length) {
-		showHelp(ns);
-		endScript(ns);
-	}
+	ns.tprint(`\n---------- START ----------\n`);
 
 	const args = ns.flags([
+		["auto", false],
 		["help", false],
 		["start", false],
 		["stop", false],
@@ -54,7 +49,6 @@ export async function main(ns) {
 		["lock-budget", ""],
 		["lock-money", ""],
 		["lock-ram", ""],
-		["grow-skill", ""],
 	]);
 
 	if (args.help) {
@@ -64,6 +58,10 @@ export async function main(ns) {
 
 	config = Common.getConfig(ns);
 
+	if (!ns.args.length || args.auto) {
+		await automation(ns, args);
+	}
+	
 	// Process commands.
 
 	if (args.start) {
@@ -148,20 +146,6 @@ export async function main(ns) {
 		);
 	}
 
-	if ("" !== args["grow-skill"]) {
-		config.skillRam = parseFloat(args["grow-skill"]) || 0;
-		config.skillRam = Math.max(config.skillRam, 0);
-
-		if (config.skillRam > 51) {
-			config.skillRam =
-				Math.max(1, Math.round(config.skillRam / 52)) * 52;
-		}
-		Common.say(
-			ns,
-			`Allocate RAM for skill growth: ${config.skillRam.toLocaleString()} GB`
-		);
-	}
-
 	// Store config/server list in files.
 	await Common.setConfig(ns, config);
 
@@ -204,15 +188,6 @@ export async function main(ns) {
 
 		info.push("");
 		ns.tprintf(info.join("\n"));
-
-		await ns.sleep(250);
-		ns.tail("attk.js", "home");
-
-		await ns.sleep(250);
-		ns.tail("grow.js", "home");
-
-		await ns.sleep(250);
-		ns.tail("sgrw.js", "home");
 	}
 
 	endScript(ns);
@@ -222,6 +197,71 @@ export async function main(ns) {
  * Display usage instructions.
  */
 function showHelp(ns) {
+	const params = [];
+	const paramFormat = [null, null, { align: "left", len: 64 }];
+
+	params.push([
+		"--start",
+		"",
+		"Start all services that are not running yet.",
+	]);
+	params.push([]);
+	params.push(["--stop", "", "Start all running services on all servers."]);
+	params.push([]);
+	params.push([
+		"--install",
+		"",
+		"Re-install the latest version of relevant scripts on all servers.",
+	]);
+	params.push([]);
+	params.push([
+		"--info",
+		"",
+		"Display current attack- and automation configuration.",
+	]);
+	params.push([]);
+	params.push([
+		"--auto-target",
+		"on|off",
+		"Enable or disable automatic picking of the target server, based on maximal expected profit.",
+	]);
+	params.push([]);
+	params.push([
+		"--target",
+		"SERVER",
+		"Tell all worker nodes to target a specific server. Disables auto-target.",
+	]);
+	params.push([]);
+	params.push([
+		"--bound-sec",
+		"NUM",
+		"Define the security level boundary. When security on target server is higher than this boundary, the server is weakened. Default: 2",
+	]);
+	params.push([]);
+	params.push([
+		"--bound-money",
+		"NUM",
+		"Define the money boundary. When the available money on the target server is lower than the boundary, the funds are grown. Default: 0.9 (i.e., 90% of max money).",
+	]);
+	params.push([]);
+	params.push([
+		"--auto-grow",
+		"on|off",
+		"Enable or Disable automatic network growth.",
+	]);
+	params.push([]);
+	params.push([
+		"--lock-money",
+		"VALUE",
+		"Defines the locked budget that should not be invested into automatic network growth. Set to 0 to automatically invest all your money. Sample values: 20k, 250m, 1050b.",
+	]);
+	params.push([]);
+	params.push([
+		"--lock-ram",
+		"VALUE",
+		"Defines, how much RAM is reserved on the home computer. Locked RAM is not used by attk.js.",
+	]);
+
 	const help = [
 		"Usage:",
 		"  master [--command [value]] [--command2 [value2]] ...",
@@ -232,42 +272,74 @@ function showHelp(ns) {
 		"  master --target n00dles --start",
 		"",
 		"Commands:",
-		"  --start      Start all stopped services.",
-		"  --stop       Stop all running services.",
-		"  --install    Re-install the hacking scripts on all servers.",
-		"  --info       Outputs the current attack config.",
 		"",
-		"  --auto-target on|off  Enable or Disable automatic picking of",
-		"               the target server, based on maximal expected profit",
-		"  --target <server>  Tell all worker nodes to target a specific",
-		"               server.",
-		"",
-		"  --bound-sec <num>  Define the security level boundary.",
-		"               Default: 4",
-		"  --bound-money <num>  Define the money boundary.",
-		"               Default: 0.6",
-		"",
-		"  --auto-grow on|off  Enable or Disable automatic network growth.",
-		"  --lock-money <val>  Defines the locked budget that should",
-		"               not be invested into automatic network growth.",
-		"               Set to 0 to automatically invest all your money.",
-		"               Sample values: 20k, 250m, 1050b",
-		"",
-		"  --lock-ram <val>  Defines, how much RAM is reserved on the home",
-		"               computer. Locked RAM is not used by attk.js or sgrw.js.",
-		"",
-		"  --grow-skill <val>  Allocate RAM to grow hacking skill. This RAM",
-		"               is not used by attk.js. Minimum value is 52 GB - a",
-		"               value will disable this feature.",
 	];
 
-	ns.tprintf("\n%s\n", help.join("\n"));
+	ns.tprint(
+		`\n${help.join("\n")}\n${Common.printF(params, [], paramFormat)}\n`
+	);
 }
 
 /**
  * Exits the script execution
  */
 function endScript(ns) {
-	ns.tprint("---------- EXIT ----------\n\n");
+	ns.tprint(`\n---------- EXIT ----------\n\n`);
+
+	// On initial server we need to spawn the grow script,
+	// because RAM is too scarce to run master + grow at once.
+	if (config.started && !ns.isRunning("grow.js", "home")) {
+		ns.spawn("grow.js");
+	}
+
 	ns.exit();
+}
+
+async function automation(ns, args) {
+	let runner;
+	let guideFile;
+	const guide = [];
+	const homeRam = ns.getServerMaxRam("home");
+
+	guide.push(" +------- -- -");
+	guide.push(" | Current RAM: " + homeRam.toLocaleString() + " GB");
+	guide.push(" +---------- --- -");
+	guide.push("");
+
+	if (homeRam < 64) {
+		guideFile = "/guide/stage1.txt";
+
+		runner = () => {
+			ns.spawn("master.js", 1, "--install", "--start");
+			ns.killall("home");
+		};
+	} else if (homeRam < 1024) {
+		guideFile = "/guide/stage2.txt";
+
+		runner = () => {
+			ns.spawn("master.js", 1, "--install", "--start");
+			ns.killall("home");
+		};
+	} else {
+		guideFile = "/guide/stage3.txt";
+
+		runner = () => {
+			ns.spawn("master.js", 1, "--install", "--start");
+			ns.killall("home");
+		};
+	}
+
+	if (guideFile) {
+		guide.push(ns.read(guideFile));
+	}
+
+	ns.tprint(
+		`\n\n${guide.join(
+			"\n"
+		)}\n\nMore options: run ${ns.getScriptName()} --help\n\n`
+	);
+
+	if ("function" === typeof runner) {
+		runner();
+	}
 }
