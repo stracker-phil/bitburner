@@ -319,7 +319,7 @@ async function doAttackWeaken(ns) {
 
 	await Server.allAttackers(async (server) => {
 		server.refreshRam(ns);
-		
+
 		let maxThreads = server.calcThreads(ns, "run-weaken.js");
 
 		/**
@@ -415,8 +415,8 @@ async function doAttackGrow(ns, attDelay) {
 		 */
 		if (maxThreads && threadsGrow > 0) {
 			const threads = Math.min(maxThreads, threadsGrow);
-			const thrGrow = Math.ceil(threads / 2);
-			const thrWeak = Math.floor(threads / 2);
+			const thrWeak = Math.ceil(threads / 12.5);
+			const thrGrow = threads - thrWeak;
 
 			if (runGrowWeaken(server, thrGrow, thrWeak)) {
 				threadsGrow -= threads;
