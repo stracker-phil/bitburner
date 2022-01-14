@@ -85,7 +85,10 @@ export async function main(ns) {
 function explainAttack(ns, info) {
 	target.refreshStats(ns);
 
-	const wakeUpTime = Common.timestamp(target.timeWeaken + 300);
+	const attStartTime = Common.timestamp();
+	const attEndTime = Common.timestamp(target.timeWeaken + 300);
+	const attDuration = Common.formatTime(target.timeWeaken + 300, true, true);
+
 	const minSecurity = target.minDifficulty.toFixed(2);
 	const curSecurity = target.hackDifficulty.toFixed(2);
 	const maxMoney = Common.formatMoney(ns, target.moneyMax);
@@ -93,11 +96,11 @@ function explainAttack(ns, info) {
 	const pctMoney = ((target.moneyAvailable / target.moneyMax) * 100).toFixed(
 		0
 	);
-	const timeHack = ns.tFormat(target.timeHack);
-	const timeWeaken = ns.tFormat(target.timeWeaken);
-	const timeGrow = ns.tFormat(target.timeGrow);
-	const delayHack = ns.tFormat(target.delayHack);
-	const delayGrow = ns.tFormat(target.delayGrow);
+	const timeHack = Common.formatTime(target.timeHack, true);
+	const timeWeaken = Common.formatTime(target.timeWeaken, true);
+	const timeGrow = Common.formatTime(target.timeGrow, true);
+	const delayHack = Common.formatTime(target.delayHack, true);
+	const delayGrow = Common.formatTime(target.delayGrow, true);
 
 	let table = "";
 	let totalWeaken = 0;
@@ -181,7 +184,10 @@ function explainAttack(ns, info) {
 		`  - Time to grow:    ${timeGrow}`,
 		`  - Hack delay:      ${delayHack}`,
 		`  - Grow delay:      ${delayGrow}`,
-		`  - Next attack at:  ${wakeUpTime}`,
+		"",
+		`  - Starts at: ${attStartTime}`,
+		`  - Ends at:   ${attEndTime}`,
+		`  - Duration:  ${attDuration}`,
 		"",
 		`  - Weaken:    ${totalWeakenFmt} (${totalWeakenPct}%)`,
 		`  - Grow:      ${totalGrowFmt} (${totalGrowPct}%)`,
@@ -348,7 +354,8 @@ async function doAttackWeaken(ns) {
 	 * then start a grow attack with the remaining RAM.
 	 */
 	if (unusedResources) {
-		duration = getDuration(duration, await doAttackGrow(ns, 20));
+		const delay = 20 + duration - target.timeWeaken;
+		duration = getDuration(duration, await doAttackGrow(ns, delay));
 	}
 
 	return duration;
@@ -370,17 +377,16 @@ async function doAttackGrow(ns, attDelay) {
 
 	const timeWeaken = target.timeWeaken;
 	const timeGrow = target.timeGrow;
-	const maxTime = Math.max(timeWeaken, timeGrow);
 
-	let startGrow = attDelay + maxTime - timeGrow;
-	let startWeak = attDelay + 20 + maxTime - timeWeaken;
+	let startWeak = attDelay + 20;
+	let startGrow = attDelay + timeWeaken - timeGrow;
 	const minStart = Math.min(startWeak, startGrow);
 
 	let unusedResources = false;
 
 	startGrow = startGrow - minStart;
 	startWeak = startWeak - minStart;
-	duration = attDelay + maxTime + 40;
+	duration = attDelay + timeWeaken + 40;
 
 	function runGrowWeaken(server, thrGrow, thrWeak) {
 		const pidGrow = server.attack(
@@ -415,12 +421,16 @@ async function doAttackGrow(ns, attDelay) {
 		 */
 		if (maxThreads && threadsGrow > 0) {
 			const threads = Math.min(maxThreads, threadsGrow);
-			const thrWeak = Math.ceil(threads / 12.5);
+			const thrWeak = Math.ceil(threads / 5);
 			const thrGrow = threads - thrWeak;
 
 			if (runGrowWeaken(server, thrGrow, thrWeak)) {
 				threadsGrow -= threads;
 				maxThreads -= threads;
+
+				duration += 40;
+				startGrow += 20;
+				startWeak += 20;
 			}
 		}
 
@@ -438,7 +448,8 @@ async function doAttackGrow(ns, attDelay) {
 	 * then directly spawn a HWGW attack.
 	 */
 	if (unusedResources) {
-		duration = getDuration(duration, await doAttackHack(ns, attDelay + 40));
+		const delay = 40 + duration - target.timeWeaken;
+		duration = getDuration(duration, await doAttackHack(ns, delay));
 	}
 
 	return duration;
@@ -454,99 +465,75 @@ async function doAttackGrow(ns, attDelay) {
  * @returns {int} Duration of the slowest cycle.
  */
 async function doAttackHack(ns, attDelay) {
+	let duration = 0;
+
 	attDelay = parseInt(attDelay) || 0;
-
-	// Duration of one HWGW batch cycle.
-	const hwgwDuration = Math.max(
-		target.timeGrow,
-		target.timeWeaken,
-		target.timeHack
-	);
-
-	// Maximum batches that fit into one cycle.
-	const hwgwPerCycle = Math.floor(hwgwDuration / 20);
 
 	const timeWeaken = target.timeWeaken;
 	const timeGrow = target.timeGrow;
 	const timeHack = target.timeHack;
-	const maxTime = Math.max(timeWeaken, timeGrow, timeHack);
 
 	let delay = attDelay;
-	let batchesInCycle = 0;
-	let totalCycles = 1;
-	let duration = 0;
-
-	let step, startHack, startGrow, startWeak, minStart;
-
-	function nextCycle() {
-		totalCycles++;
-		batchesInCycle = 0;
-		delay = attDelay + totalCycles;
-	}
+	let startHack, startGrow, startWeak;
 
 	function nextBatch() {
-		batchesInCycle++;
-		step = "H";
+		startHack = delay + timeWeaken - timeHack;
+		startGrow = delay + 20 + timeWeaken - timeGrow;
+		startWeak = delay + 40;
+		duration = getDuration(duration, 20 + startWeak + timeWeaken);
 
-		startHack = maxTime - timeHack;
-		startGrow = 20 + maxTime - timeGrow;
-		startWeak = 40 + maxTime - timeWeaken;
-		minStart = Math.min(startHack, startWeak, startGrow);
-		startHack = delay + startHack - minStart;
-		startGrow = delay + startGrow - minStart;
-		startWeak = delay + startWeak - minStart;
-
-		duration = getDuration(duration, 80 + delay + maxTime);
-
-		// Delay the next batch by 20ms.
-		delay += 20;
-
-		if (batchesInCycle > hwgwPerCycle) {
-			nextCycle();
-		}
+		// Delay the next batch by 60ms, so the first step of the next
+		// cycle finishes directly after the last step of the current cycle.
+		delay += 60;
 	}
 
 	/**
-	 * 25 hacks need 1 weaken
-	 * 12.5 grows need 1 weaken
+	 * One cycle consists of:
+	 *   5 hacks
+	 *   3 grows
+	 *   1 weaken
+	 *
+	 * Total RAM usage: 13.75 GB
 	 */
-	const numHack = 5; // 25;
-	const numGrow = 2; // 12;
+	const numHack = 5;
+	const numGrow = 3;
 	const batchRam = numHack * 1.7 + numGrow * 1.75 + 2 * 1.75;
 
-	function nextStep(server, threads, runStep) {
-		const manualStep = !!runStep;
-		let fnLog, nextStep, script, ramNeeded, startAfter;
+	// Number of threads that are needed to reduce the targets
+	// money to 50%.
+	const limitThreads = 0.5 / (target.hackAnalyze * numHack);
+
+	console.log('Hack threads needed to reduce the servers money by 50%:', limitThreads, ':', target.hackAnalyze)
+	
+
+	function nextStep(server, threads, step) {
+		let fnLog, script, ramNeeded, startAfter;
 
 		if (isNaN(threads) || threads < 1) {
 			threads = 1;
 		}
-		if (!manualStep) {
-			runStep = step;
-		}
 
-		switch (runStep) {
+		switch (step) {
 			case "H":
 				script = "hack";
 				startAfter = startHack;
 				threads *= numHack;
 				ramNeeded = 1.7;
-				nextStep = "G";
 				fnLog = logJobHack;
 				break;
+
 			case "G":
 				script = "grow";
 				startAfter = startGrow;
 				threads *= numGrow;
 				ramNeeded = 1.75;
-				nextStep = "W";
 				fnLog = logJobGrow;
 				break;
+
 			case "W":
 				script = "weaken";
 				startAfter = startWeak;
 				ramNeeded = 1.75;
-				nextStep = "H";
 				fnLog = logJobWeaken;
 				break;
 		}
@@ -557,7 +544,6 @@ async function doAttackHack(ns, attDelay) {
 
 		if (server.ramFree < ramNeeded) {
 			return false;
-			Ì;
 		}
 
 		const pid = server.attack(
@@ -568,13 +554,10 @@ async function doAttackHack(ns, attDelay) {
 			startAfter
 		);
 
-		// When no more RAM available on this server,
-		// we'll continue the batch on the next server.
 		if (pid) {
 			fnLog(pid, "hack", server, threads, startAfter);
-			step = nextStep;
 
-			if (!step || "H" === nextStep) {
+			if ("W" === step) {
 				nextBatch();
 			}
 
@@ -584,19 +567,37 @@ async function doAttackHack(ns, attDelay) {
 		}
 	}
 
-	nextBatch();
+	function runHackSimple(server, threads) {
+		const pid = server.attack(
+			ns,
+			"hack",
+			threads,
+			target.hostname,
+			startHack
+		);
 
+		logJobHack(pid, "hack", server, threads, startHack);
+	}
+
+	nextBatch();
+	
 	// Run 1: Start batches with max-threads on every server.
 	await Server.allAttackers(async (server) => {
-		const threads = Math.floor(server.ramFree / batchRam);
+		// Number of batches that are possible by the server RAM.
+		const maxThreads = Math.floor(server.ramFree / batchRam);
 
-		if (threads < 1) {
-			return;
+		const threads = maxThreads;
+
+		if (threads > 0) {
+			nextStep(server, threads, "H");
+			nextStep(server, threads, "G");
+			nextStep(server, threads, "W");
+		} else {
+			// Fall back to a plain hack attack when server is too small
+			// for a full HGW cycle.
+			const threads = Math.floor(server.ramFree / 1.7);
+			runHackSimple(server, threads);
 		}
-
-		nextStep(server, threads, "H");
-		nextStep(server, threads, "G");
-		nextStep(server, threads, "W");
 	});
 
 	return duration;

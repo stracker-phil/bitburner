@@ -5,6 +5,7 @@ export async function main(ns) {
 	const args = ns.flags([
 		["help", false],
 		["tree", false],
+		["connect", false],
 	]);
 
 	if (!ns.args.length || args.help) {
@@ -12,11 +13,12 @@ export async function main(ns) {
 			"This script helps you find a server on the network and shows you the path to get to it."
 		);
 		ns.tprint(
-			`Usage: run ${ns.getScriptName()} [--tree] SERVER|WORD [SERVER2|WORD2 ...]`
+			`Usage: run ${ns.getScriptName()} [--tree] [--connect] KEYWORD [KEYWORD2 ...]`
 		);
 		ns.tprint("Example:");
 		ns.tprint(`> run ${ns.getScriptName()} n00dles`);
 		ns.tprint(`> run ${ns.getScriptName()} --tree run`);
+		ns.tprint(`> run ${ns.getScriptName()} --connect avmi`);
 		return;
 	}
 
@@ -71,12 +73,35 @@ export async function main(ns) {
 		.forEach((host) => {
 			showResult(host);
 		});
-	//for (let i = 0; i < matches.length; i++) {	})
 
 	if (table.length) {
 		details.push(
 			Common.printF(table, ["Server", "Path"], [null, { len: 100 }])
 		);
+	}
+
+	if (args.connect) {
+		if (1 === matches.length) {
+			const server = Server.get(matches[0]);
+			const route = server.route.slice(1);
+
+			// TODO: requires SF4.1
+			/*
+			for (let i = 0; i<route.length; i++) {
+				 ns.connect(route[i]);
+			}
+			*/
+
+			details.push("\n> connect " + route.join(";connect "));
+		} else if (!matches.length) {
+			details.push(
+				"\n  Could not find a matching server, please adjust your search terms\n"
+			);
+		} else {
+			details.push(
+				"\n  Multiple matches found, please refine your search to enable auto-connect.\n"
+			);
+		}
 	}
 
 	ns.tprint(`${details.join("\n")}\n\n`);

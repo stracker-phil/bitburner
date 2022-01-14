@@ -11,7 +11,9 @@ export async function main(ns) {
 
 	if (args.help) {
 		ns.tprint("This script displays all known servers you have access to.");
-		ns.tprint(`Usage: run ${ns.getScriptName()} [--hacked|--own] [--tree] KEYWORD`);
+		ns.tprint(
+			`Usage: run ${ns.getScriptName()} [--hacked|--own] [--tree] KEYWORD`
+		);
 		ns.tprint("Example:");
 		ns.tprint(`> run ${ns.getScriptName()} --hacked`);
 		ns.tprint(`> run ${ns.getScriptName()} --tree`);
@@ -21,6 +23,12 @@ export async function main(ns) {
 
 	const list = [];
 	const config = Common.getConfig(ns);
+	const count = {
+		own: 0,
+		hacked: 0,
+		locked: 0,
+		total: 0,
+	};
 
 	if (args.hacked) {
 		args.own = false;
@@ -37,11 +45,12 @@ export async function main(ns) {
 
 		if (args._.length) {
 			const host = server.hostname.toLowerCase();
+			const owner = server.organizationName.toLowerCase();
 
 			for (let i = 0; i < args._.length; i++) {
 				const term = args._[i].toLowerCase();
 
-				if (-1 !== host.indexOf(term)) {
+				if (-1 !== host.indexOf(term) || -1 !== owner.indexOf(term)) {
 					return true;
 				}
 			}
@@ -73,11 +82,15 @@ export async function main(ns) {
 			const ports = "•".repeat(Math.max(0, portDiff));
 			const requiredSkill = server.requiredHackingSkill.toString();
 
-			infos.push(`${server.ramTotalMaxFormatted}`);
+			if (server.ramTotalMax > 0) {
+				infos.push(server.ramTotalMaxFormatted);
+			} else {
+				infos.push("-");
+			}
 
 			if (!server.purchasedByPlayer) {
 				if (server.hasAdminRights) {
-					const state = server.ramFree >= 4 ? "IDLE" : "ACTIVE";
+					const state = server.ramFree >= 4 ? "-idle-" : "ACTIVE";
 					const backdoor = server.backdoorInstalled ? "◼" : " ";
 
 					infos.push(backdoor + " " + state);
@@ -105,6 +118,17 @@ export async function main(ns) {
 			infos.push(server.organizationName);
 
 			list.push([`${prefix}${icon} ${parent}`, ...infos]);
+
+			count.total++;
+			if (server.purchasedByPlayer) {
+				count.own++;
+			} else {
+				if (server.hasAdminRights) {
+					count.hacked++;
+				} else {
+					count.locked++;
+				}
+			}
 		}
 
 		for (const i in server.children) {
@@ -122,5 +146,21 @@ export async function main(ns) {
 		? []
 		: ["Server", "RAM", "Status", "Money", "Sec", "Profit", "Owner"];
 
-	ns.tprint(`\n\n${Common.printF(list, header, format)}\n\n`);
+	count.own = count.own ? count.own.toString() : "-";
+	count.hacked = count.hacked ? count.hacked.toString() : "-";
+	count.locked = count.locked ? count.locked.toString() : "-";
+	count.total = count.total ? count.total.toString() : "-";
+
+	const summary = [
+		` Own:    ${" ".repeat(3 - count.own.length) + count.own}`,
+		` Hacked: ${" ".repeat(3 - count.hacked.length) + count.hacked}`,
+		` Locked: ${" ".repeat(3 - count.locked.length) + count.locked}`,
+		` Total:  ${" ".repeat(3 - count.total.length) + count.total}`,
+	];
+
+	ns.tprint(
+		`\n\n${Common.printF(list, header, format)}\n\n${summary.join(
+			"\n"
+		)}\n\n`
+	);
 }

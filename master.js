@@ -76,8 +76,8 @@ export async function main(ns) {
 		config.target = args.target;
 		Common.say(ns, `Change target server to ${config.target}`);
 
-		if (!config["auto-target"]) {
-			config["auto-target"] = "off";
+		if (!args["auto-target"]) {
+			args["auto-target"] = "off";
 		}
 	}
 

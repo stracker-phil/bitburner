@@ -3,5 +3,5 @@ export async function main(ns) {
 		await ns.sleep(ns.args[1]);
 	}
 
-	await ns.writePort(1, await ns.hack(ns.args[0]));
+	await ns.writePort(1, await ns.hack(ns.args[0], {stock: true}));
 }
