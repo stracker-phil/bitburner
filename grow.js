@@ -34,6 +34,8 @@ export async function main(ns) {
 
 			await growNetwork(ns);
 			workOnTasks(ns);
+
+			await Server.initialize(ns);
 		}
 
 		await ns.sleep(30000);

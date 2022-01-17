@@ -26,6 +26,8 @@ let jobs = [];
  * Predicted changes in target server security after an attack.
  */
 const changeWeaken = 0.05;
+const changeHack = 0.002;
+const changeGrow = 0.004;
 
 /**
  * Centralized monitoring script, that runs in a
@@ -101,11 +103,12 @@ function explainAttack(ns, info) {
 	const timeGrow = Common.formatTime(target.timeGrow, true);
 	const delayHack = Common.formatTime(target.delayHack, true);
 	const delayGrow = Common.formatTime(target.delayGrow, true);
+	const showTable = jobs.length < 750;
 
 	let table = "";
 	let totalWeaken = 0;
-	let totalGrow = 0;
 	let totalHack = 0;
+	let totalGrow = 0;
 
 	if (jobs && jobs.length) {
 		const tableHead = [
@@ -142,7 +145,9 @@ function explainAttack(ns, info) {
 			}
 		}
 
-		table = Common.printF(tableRows, tableHead, tableFormat);
+		if (showTable) {
+			table = Common.printF(tableRows, tableHead, tableFormat);
+		}
 	}
 
 	let totalThreads = totalWeaken + totalGrow + totalHack;
@@ -469,106 +474,132 @@ async function doAttackHack(ns, attDelay) {
 
 	attDelay = parseInt(attDelay) || 0;
 
+	// Steal 50% of the target servers money in one cycle.
+	const stealPercent = 0.5;
+
 	const timeWeaken = target.timeWeaken;
 	const timeGrow = target.timeGrow;
 	const timeHack = target.timeHack;
 
 	let delay = attDelay;
-	let startHack, startGrow, startWeak;
 
-	function nextBatch() {
-		startHack = delay + timeWeaken - timeHack;
-		startGrow = delay + 20 + timeWeaken - timeGrow;
-		startWeak = delay + 40;
+	// Number of hack threads that are needed to reduce the
+	// targets money to defined percentage (i.e. 50%).
+	const hacksNeeded = Math.ceil(stealPercent / target.hackAnalyze);
+
+	// Number of grow threads needed to restore servers money
+	// back to 100%. We apply this grow threads three times:
+	// 50% * 1.26 * 1.26 * 1.26 = 100.1%
+	const growsNeeded = Math.ceil(ns.growthAnalyze(target.hostname, 1.26));
+
+	// Number of weaken threads needed to counter the security increase
+	// caused by the above number of hack threads.
+	const weakensHNeeded = Math.ceil((changeHack * hacksNeeded) / changeWeaken);
+
+	// Number of weaken threads needed to counter the security increase
+	// caused by the above number of grow threads.
+	const weakensGNeeded = Math.ceil(
+		(changeGrow * 3 * growsNeeded) / changeWeaken
+	);
+
+	// Total weakens needed.
+	const weakensNeeded = weakensGNeeded + weakensHNeeded;
+
+	const ramNeeded =
+		hacksNeeded * 1.7 + 3 * growsNeeded * 1.75 + weakensNeeded * 1.75;
+
+	function runBatches(server, cycles) {
+		cycles = Math.min(cycles, 1500);
+		for (let i = 0; i < cycles; i++) {
+			let startHack = delay + timeWeaken - timeHack;
+			let startWeakH = delay + 20;
+			let startGrow = delay + 40 + timeWeaken - timeGrow;
+			let startWeakG = delay + 100;
+
+			// Delay the next batch by 60ms, so the first step of the next
+			// cycle finishes directly after the last step of the current cycle.
+			delay += 120;
+			duration = getDuration(duration, delay + timeWeaken);
+
+			const pidHack = server.attack(
+				ns,
+				"hack",
+				hacksNeeded,
+				target.hostname,
+				startHack
+			);
+
+			logJobHack(pidHack, "batch-hack", server, hacksNeeded, startHack);
+
+			const pidWeakH = server.attack(
+				ns,
+				"weaken",
+				weakensHNeeded,
+				target.hostname,
+				startWeakH
+			);
+
+			logJobWeaken(
+				pidWeakH,
+				"batch-hack",
+				server,
+				weakensHNeeded,
+				startWeakH
+			);
+
+			// It's more efficient to run 3 smaller batches in a
+			// row, than to run one batch with the same number
+			// of threads (approx 7% less threads needed for the
+			// same result)
+			for (let g = 0; g < 3; g++) {
+				const pidGrow = server.attack(
+					ns,
+					"grow",
+					growsNeeded,
+					target.hostname,
+					startGrow + g * 20
+				);
+
+				logJobGrow(
+					pidGrow,
+					"batch-hack",
+					server,
+					growsNeeded,
+					startGrow + g * 20
+				);
+			}
+
+			const pidWeakG = server.attack(
+				ns,
+				"weaken",
+				weakensGNeeded,
+				target.hostname,
+				startWeakG
+			);
+
+			logJobWeaken(
+				pidWeakG,
+				"batch-hack",
+				server,
+				weakensGNeeded,
+				startWeakG
+			);
+		}
+	}
+
+	// Simple version of the HGW attack, which can operate with
+	// less RAM but is not as optimized.
+	function runHackSimple(server, threads) {
+		let startHack = delay + timeWeaken - timeHack;
+		let startGrow = delay + 20 + timeWeaken - timeGrow;
+		let startWeak = delay + 40;
 		duration = getDuration(duration, 20 + startWeak + timeWeaken);
 
 		// Delay the next batch by 60ms, so the first step of the next
 		// cycle finishes directly after the last step of the current cycle.
 		delay += 60;
-	}
 
-	/**
-	 * One cycle consists of:
-	 *   5 hacks
-	 *   3 grows
-	 *   1 weaken
-	 *
-	 * Total RAM usage: 13.75 GB
-	 */
-	const numHack = 5;
-	const numGrow = 3;
-	const batchRam = numHack * 1.7 + numGrow * 1.75 + 2 * 1.75;
-
-	// Number of threads that are needed to reduce the targets
-	// money to 50%.
-	const limitThreads = 0.5 / (target.hackAnalyze * numHack);
-
-	console.log('Hack threads needed to reduce the servers money by 50%:', limitThreads, ':', target.hackAnalyze)
-	
-
-	function nextStep(server, threads, step) {
-		let fnLog, script, ramNeeded, startAfter;
-
-		if (isNaN(threads) || threads < 1) {
-			threads = 1;
-		}
-
-		switch (step) {
-			case "H":
-				script = "hack";
-				startAfter = startHack;
-				threads *= numHack;
-				ramNeeded = 1.7;
-				fnLog = logJobHack;
-				break;
-
-			case "G":
-				script = "grow";
-				startAfter = startGrow;
-				threads *= numGrow;
-				ramNeeded = 1.75;
-				fnLog = logJobGrow;
-				break;
-
-			case "W":
-				script = "weaken";
-				startAfter = startWeak;
-				ramNeeded = 1.75;
-				fnLog = logJobWeaken;
-				break;
-		}
-
-		ramNeeded *= threads;
-
-		server.refreshRam(ns);
-
-		if (server.ramFree < ramNeeded) {
-			return false;
-		}
-
-		const pid = server.attack(
-			ns,
-			script,
-			threads,
-			target.hostname,
-			startAfter
-		);
-
-		if (pid) {
-			fnLog(pid, "hack", server, threads, startAfter);
-
-			if ("W" === step) {
-				nextBatch();
-			}
-
-			return true;
-		} else {
-			return false;
-		}
-	}
-
-	function runHackSimple(server, threads) {
-		const pid = server.attack(
+		const pidHack = server.attack(
 			ns,
 			"hack",
 			threads,
@@ -576,27 +607,43 @@ async function doAttackHack(ns, attDelay) {
 			startHack
 		);
 
-		logJobHack(pid, "hack", server, threads, startHack);
+		logJobHack(pidHack, "hack", server, threads, startHack);
+
+		const pidGrow = server.attack(
+			ns,
+			"grow",
+			threads,
+			target.hostname,
+			startGrow
+		);
+
+		logJobGrow(pidGrow, "hack", server, threads, startGrow);
+
+		const pidWeak = server.attack(
+			ns,
+			"weaken",
+			threads,
+			target.hostname,
+			startWeak
+		);
+
+		logJobWeaken(pidWeak, "hack", server, threads, startWeak);
 	}
 
-	nextBatch();
-	
+	//nextBatch();
+
 	// Run 1: Start batches with max-threads on every server.
 	await Server.allAttackers(async (server) => {
 		// Number of batches that are possible by the server RAM.
-		const maxThreads = Math.floor(server.ramFree / batchRam);
+		const fullCycles = Math.floor(server.ramFree / ramNeeded);
 
-		const threads = maxThreads;
+		// Number of simple batches that fit into the servers RAM.
+		const smallCycles = Math.floor(server.ramFree / 5.2);
 
-		if (threads > 0) {
-			nextStep(server, threads, "H");
-			nextStep(server, threads, "G");
-			nextStep(server, threads, "W");
-		} else {
-			// Fall back to a plain hack attack when server is too small
-			// for a full HGW cycle.
-			const threads = Math.floor(server.ramFree / 1.7);
-			runHackSimple(server, threads);
+		if (fullCycles > 0) {
+			runBatches(server, fullCycles);
+		} else if (smallCycles > 0) {
+			runHackSimple(server, smallCycles);
 		}
 	});
 

@@ -12,16 +12,20 @@ export async function main(ns) {
 	while (true) {
 		const curSec = ns.getServerSecurityLevel(target);
 		const curMoney = ns.getServerMoneyAvailable(target);
+		
+		if (ns.hasRootAccess(target)) {
+			return ns.exit();
+		}
 
-		const info = [
-			new Date().toISOString().slice(11, 19),
-			curSec.toFixed(1) + " / " + minSec,
-			ns.nFormat(parseInt(curMoney), "$0.000a") +
+			const info = [
+				new Date().toISOString().slice(11, 19),
+				curSec.toFixed(1) + " / " + minSec,
+				ns.nFormat(parseInt(curMoney), "$0.000a") +
 				" / " +
 				ns.nFormat(parseInt(minMoney), "$0.000a"),
-		].join(" | ");
+			].join(" | ");
 
-		if (curSec > lowSec) {
+			if (curSec > lowSec) {
 			ns.print("WEAKEN | " + info);
 			await ns.weaken(target);
 		} else if (curMoney < lowMoney) {
