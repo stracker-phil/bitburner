@@ -32,9 +32,8 @@ export async function main(ns) {
 	// previous interval.
 	const history = {};
 
-	// Decide on an action to take for a specific stock
-	// symbol based on the history data.
-	const stockAction = {};
+	// Information on whether to purchase a given stock.
+	const buyStock = {};
 
 	// Max percentage of shares to buy in one interval.
 	// 1.0 = 100%
@@ -59,85 +58,65 @@ export async function main(ns) {
 	ns.disableLog("getServerMoneyAvailable");
 	ns.clearLog();
 
-	// First get a list of relevant stocks. Because a symbol
-	// always keeps the same forecast level throughout one round
-	// we can calculate a list of relevant stocks right now and
-	// only monitor those stocks.
-	const stocks = ns.stock
-		.getSymbols()
-		.filter(
-			(symbol) =>
-				Math.abs(ns.stock.getForecast(symbol) - 0.5) + 0.5 >=
-					minForecast &&
-				ns.stock.getVolatility(symbol) <= maxVolatility
-		);
-
-	ns.tprint(
-		`\nMonitoring the following stock symbols:\n${stocks.join(", ")}\n`
-	);
-
 	while (true) {
+		const stocks = ns.stock
+			.getSymbols()
+			.sort((a, b) => ns.stock.getForecast(b) - ns.stock.getForecast(a));
+
 		for (const symbol of stocks) {
 			const price = Math.ceil(ns.stock.getAskPrice(symbol));
+			const bidPrice = Math.ceil(ns.stock.getBidPrice(symbol));
 			const forecast = ns.stock.getForecast(symbol);
+			const volatility = ns.stock.getVolatility(symbol);
+			const range = 0.5 + Math.abs(forecast - 0.5);
 
 			if (history[symbol]) {
 				const position = ns.stock.getPosition(symbol);
 				const prev = history[symbol];
-				const bull2bear = forecast < 0.5 && prev.forecast > 0.5;
-				const bear2bull = forecast > 0.5 && prev.forecast < 0.5;
-				const meanPrice = Math.floor(
-					(prev.maxPrice + prev.minPrice) / 2
-				);
 
 				// Sell all shares when the stock changes from bull to
 				// bear mode (i.e. from "++" to "--").
-				if (bull2bear) {
-					ns.print(`${symbol} | SELL | Bull to bear`);
-					if (position[0]) {
-						ns.stock.sell(symbol, position[0]);
-					}
+				if (position[0] && forecast < 0.5) {
+					const value = position[0] * bidPrice - 100000;
+					const profit = position[0] * position[1] - value;
+					ns.print(
+						`${symbol} | SELL @ ${bidPrice} | Profit ${profit.toLocaleString()}`
+					);
+					ns.stock.sell(symbol, position[0]);
 				}
 
 				// Start buying when the stock changes from bear to bull
 				// mode (i.e. from "--" to "++"). We assume that the
 				// price is near the bottom of the possible range now.
-				if (bear2bull) {
-					ns.print(`${symbol} | START BUYING | Bear to bull`);
-					stockAction[symbol] = "buy";
+				if (forecast > 0.5 && prev.forecast < 0.5) {
+					// Perform limit checks (min-forecast and max volatility)
+					if (volatility <= maxVolatility && range >= minForecast) {
+						buyStock[symbol] = price * 1.1;
+
+						ns.print(
+							`${symbol} | START BUYING | Max price: ${buyStock[
+								symbol
+							].toFixed(2)}`
+						);
+					} else {
+						// Too volatile or too insecure: Do not buy this stock
+						buyStock[symbol] = 0;
+					}
 				}
 
-				// We continue to buy stock, while the current price is
-				// lower than the mean between highest and lowest known
-				// ask price for that symbol.
-				if (stockAction[symbol] === "buy") {
-					console.log("Buy?", symbol, price, meanPrice, prev);
-					if (price <= meanPrice) {
-						buyPositions(symbol);
-					} else {
-						ns.print(
-							`${symbol} | STOP BUYING | Ask price too high | ${price} > ${meanPrice}`
-						);
-						stockAction[symbol] = "";
-					}
+				// We continue to purchase stock shares until a calculated
+				// price limit is reached.
+				if (buyStock[symbol] && price <= buyStock[symbol]) {
+					ns.print(`${symbol} | BUY @ ${price}`);
+					buyPositions(symbol);
 				}
 			} else {
 				history[symbol] = {
 					forecast: forecast,
-					minPrice: price,
-					maxPrice: price,
 				};
 			}
 
 			history[symbol].forecast = forecast;
-			history[symbol].minPrice = Math.min(
-				price,
-				history[symbol].minPrice
-			);
-			history[symbol].maxPrice = Math.max(
-				price,
-				history[symbol].maxPrice
-			);
 		}
 
 		await ns.sleep(500);
