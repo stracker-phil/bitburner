@@ -62,24 +62,20 @@ export async function main(ns) {
 		}
 
 		showLog(ns);
-		await ns.sleep(2000);
+		await ns.sleep(1000);
 	}
 }
 
 function buyStock(ns, stock) {
 	const stockPrice = ns.stock.getAskPrice(stock);
 
-	const playerMoney = ns.getServerMoneyAvailable("home") - minimumCash;
-
 	const position = ns.stock.getPosition(stock);
 	const ownedShares = position[0];
 
-	const maxSpend = playerMoney * 0.1;
-	const calcShares = maxSpend / stockPrice;
 	const maxShares = ns.stock.getMaxShares(stock);
 	const availableShares = maxShares - ownedShares;
 
-	const shares = Math.min(calcShares, availableShares, maxShares / 20);
+	const shares = Math.min(150, availableShares);
 
 	if (shares < 1) {
 		return;

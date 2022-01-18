@@ -61,7 +61,7 @@ export async function main(ns) {
 	if (!ns.args.length || args.auto) {
 		await automation(ns, args);
 	}
-	
+
 	// Process commands.
 
 	if (args.start) {

@@ -2,30 +2,24 @@ export async function main(ns) {
 	ns.disableLog("ALL");
 	ns.clearLog();
 
-	const me = ns.getHostname();
-	const target = ns.args[0] || me;
+	const target = ns.args[0] || ns.getHostname();
 	const minMoney = ns.getServerMaxMoney(target);
-	const lowMoney = minMoney * 0.9;
 	const minSec = ns.getServerMinSecurityLevel(target) + 1;
+	const lowMoney = minMoney * 0.9;
 	const lowSec = minSec + 1;
 
-	while (true) {
+	while (1) {
 		const curSec = ns.getServerSecurityLevel(target);
 		const curMoney = ns.getServerMoneyAvailable(target);
-		
-		if (ns.hasRootAccess(target)) {
-			return ns.exit();
-		}
-
-			const info = [
-				new Date().toISOString().slice(11, 19),
-				curSec.toFixed(1) + " / " + minSec,
-				ns.nFormat(parseInt(curMoney), "$0.000a") +
+		const info = [
+			new Date().toISOString().slice(11, 19),
+			curSec.toFixed(1) + " / " + minSec,
+			ns.nFormat(parseInt(curMoney), "$0.000a") +
 				" / " +
 				ns.nFormat(parseInt(minMoney), "$0.000a"),
-			].join(" | ");
+		].join(" | ");
 
-			if (curSec > lowSec) {
+		if (curSec > lowSec) {
 			ns.print("WEAKEN | " + info);
 			await ns.weaken(target);
 		} else if (curMoney < lowMoney) {

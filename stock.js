@@ -83,6 +83,9 @@ export async function main(ns) {
 						`${symbol} | SELL @ ${bidPrice} | Profit ${profit.toLocaleString()}`
 					);
 					ns.stock.sell(symbol, position[0]);
+
+					// Stop buying this stock until it gets profitable again.
+					buyStock[symbol] = 0;
 				}
 
 				// Start buying when the stock changes from bear to bull
