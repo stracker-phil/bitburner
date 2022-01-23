@@ -20,7 +20,7 @@ alias find="run tools/find.js"
 alias analyze="run tools/analyze.js"
 alias contract="run tools/contract.js"
 alias monitor="run tools/monitor.js;tail tools/monitor.js"
-alias stock="run tools/stock.js"
+alias stock="kill tools/stock.js;run tools/stock.js;tail tools/stock.js"
 alias infiltrate="run tools/infiltrate.js"
 ```
 
@@ -104,7 +104,7 @@ Screenshot:
 
 **Requires API access to TIX and 4S**
 
-Starts automated stock trading. Stock trading will take a while before showing first profits: During the first hour(s) the script seems to generate losses; this happens because it purchases many stock shares and holds them until prices reach an optimum. For best results, leave the script running for an entire day or overnight - but ensure that the game is running, as automated stock trading does not work when the game is closed!
+Starts automated stock trading. The script observes the stock market for a few minutes before placing first orders, and requires some time before showing first profits: During the first hour(s) the script seems to generate losses because it purchases many stock shares and holds them until prices reach an optimum. For best results, leave the script running for an entire day or overnight - but ensure that the game is running, as automated stock trading does not work when the game is closed!
 
 Usage:
 * `stock` .. start automated stock trading.

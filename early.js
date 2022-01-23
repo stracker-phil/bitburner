@@ -1,6 +1,9 @@
 /**
  * Early game hacking script to get money and skill.
  *
+ * The script is rather primitive to minimize RAM usage.
+ * It's used while the home server has less than 64GB RAM.
+ *
  * @param {NS} ns
  */
 export async function main(ns) {
