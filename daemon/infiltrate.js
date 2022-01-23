@@ -92,12 +92,21 @@ const infiltrationGames = [
 	},
 	{
 		name: "slash when his guard is down",
-		init: function (screen) {},
+		init: function (screen) {
+			state.game.data = "wait";
+		},
 		play: function (screen) {
 			const data = getLines(getEl(screen, "h4"));
 
-			if (-1 !== data.indexOf("ATTACKING!")) {
+			if ("attack" === state.game.data) {
 				pressKey(" ");
+				state.game.data = "done";
+			}
+
+			// Attack in next frame - instant attack sometimes
+			// ends in failure.
+			if ('wait' ===state.game.data && -1 !== data.indexOf("ATTACKING!")) {
+				state.game.data = "attack";
 			}
 		},
 	},
