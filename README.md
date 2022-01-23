@@ -97,3 +97,7 @@ Usage:
 * `infiltrate` .. start infiltration automation
 * `infiltrate --status` .. get the status of the automation (enabled or disabled)
 * `infiltrate --stop` .. stop automated infiltration mode again.
+
+Screenshot:
+
+!()[img/ref-infiltrate.gif]
