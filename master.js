@@ -155,9 +155,7 @@ export async function main(ns) {
 
 		Common.say(
 			ns,
-			`Stock Trade daemon: ${
-				config.autoTrade ? "On" : "Off"
-			}`
+			`Stock Trade daemon: ${config.autoTrade ? "On" : "Off"}`
 		);
 	}
 

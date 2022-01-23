@@ -69,7 +69,7 @@ export async function main(ns) {
 			let line = args.tree ? " -" : "";
 
 			if (
-				ns.isRunning("attk.js", "home") &&
+				ns.isRunning("/daemon/attk.js", "home") &&
 				config.target === server.hostname
 			) {
 				icon = "▶";
