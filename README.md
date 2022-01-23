@@ -82,7 +82,9 @@ Usage:
 
 ### `stock`
 
-Starts automated stock trading. Requires API access to TIX and 4S. Stock trading will take a while before showing first profits: During the first hour(s) the script seems to generate losses; this happens because it purchases many stock shares and holds them until prices reach an optimum. For best results, leave the script running for an entire day or overnight - but ensure that the game is running, as automated stock trading does not work when the game is closed!
+**Requires API access to TIX and 4S**
+
+Starts automated stock trading. Stock trading will take a while before showing first profits: During the first hour(s) the script seems to generate losses; this happens because it purchases many stock shares and holds them until prices reach an optimum. For best results, leave the script running for an entire day or overnight - but ensure that the game is running, as automated stock trading does not work when the game is closed!
 
 Usage:
 * `stock` .. start automated stock trading.
