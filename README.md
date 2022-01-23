@@ -43,6 +43,10 @@ Usage:
 * `scan --tree` .. display results as tree, instead of a list
 * `scan WORD` .. display all servers with the given keyword in their name or organizations' name.
 
+Screenshot:
+
+<p align="center"><img src="img/ref-scan.png" width="640"/></p>
+
 ### `find`
 
 Locate a server based on a case-insensitive keyword.
@@ -59,7 +63,7 @@ Example:
 
 Screenshot:
 
-<p align="center"><img src="img/ref-scan.png" width="800"/></p>
+<p align="center"><img src="img/ref-find.png" width="640"/></p>
 
 ### `analyze`
 
@@ -70,7 +74,7 @@ Usage:
 
 Screenshot:
 
-<p align="center"><img src="img/ref-analyze.png" width="800"/></p>
+<p align="center"><img src="img/ref-analyze.png" width="640"/></p>
 
 ### `contract`
 
@@ -82,7 +86,7 @@ Usage:
 
 Screenshot:
 
-<p align="center"><img src="img/ref-contract.png" width="800"/></p>
+<p align="center"><img src="img/ref-contract.png" width="640"/></p>
 
 ### `monitor`
 
@@ -94,7 +98,7 @@ Usage:
 
 Screenshot:
 
-<p align="center"><img src="img/ref-monitor.png" width="800"/></p>
+<p align="center"><img src="img/ref-monitor.png" width="640"/></p>
 
 ### `stock`
 
@@ -107,7 +111,7 @@ Usage:
 
 Screenshot:
 
-<p align="center"><img src="img/ref-stock.png" width="800"/></p>
+<p align="center"><img src="img/ref-stock.png" width="640"/></p>
 
 ### `infiltrate`
 
@@ -120,4 +124,4 @@ Usage:
 
 Screenshot:
 
-<p align="center"><img src="img/ref-infiltrate.gif" width="800"/></p>
+<p align="center"><img src="img/ref-infiltrate.gif" width="640"/></p>
