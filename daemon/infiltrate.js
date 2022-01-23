@@ -12,7 +12,7 @@ const state = {
 };
 
 // Speed of game actions, in milliseconds.
-const speed = 30;
+const speed = 22;
 
 // Small hack to save RAM.
 // This will work smoothly, because the script does not use
@@ -143,17 +143,15 @@ const infiltrationGames = [
 
 			state.game.data = [];
 
-			for (let i = 0; i < rows.length; i++) {
-				const cols = rows[i].split("[");
-				const mines = [];
+			for (let y = 0; y < rows.length; y++) {
+				const cols = rows[y].split("[");
+				state.game.data[y] = [];
 
-				for (let j = 0; j < cols.length; j++) {
-					if (cols[j].length > 1) {
-						mines.push("?" === cols[j][0]);
+				for (let x = 0; x < cols.length; x++) {
+					if (cols[x].length > 1) {
+						state.game.data[y].push("?" === cols[x][0]);
 					}
 				}
-
-				state.game.data.push(mines);
 			}
 		},
 		play: function (screen) {},
@@ -171,19 +169,15 @@ const infiltrationGames = [
 
 			if (data[y][x]) {
 				pressKey(" ");
+				data[y][x] = false;
 			}
 
 			x += dir;
 
-			if (x < 0) {
-				x = 0;
+			if (x < 0 || x >= cols) {
+				x = Math.max(0, Math.min(cols - 1, x));
 				y++;
-				dir = 1;
-				pressKey("s");
-			} else if (x >= cols) {
-				x = cols - 1;
-				y++;
-				dir = -1;
+				dir *= -1;
 				pressKey("s");
 			} else {
 				pressKey(dir > 0 ? "d" : "a");
@@ -581,32 +575,36 @@ function wrapEventListeners() {
 			if ("undefined" === typeof options) {
 				options = false;
 			}
+			let handler = false;
 
-			const wrappedHandler = function (...args) {
-				if (!args[0].isTrusted) {
-					const hackedEv = {};
+			// For this script, we only want to modify "keydown" events.
+			if ("keydown" === type) {
+				handler = function (...args) {
+					if (!args[0].isTrusted) {
+						const hackedEv = {};
 
-					for (const key in args[0]) {
-						if ("isTrusted" === key) {
-							hackedEv.isTrusted = true;
-						} else if ("function" === typeof args[0][key]) {
-							hackedEv[key] = args[0][key].bind(args[0]);
-						} else {
-							hackedEv[key] = args[0][key];
+						for (const key in args[0]) {
+							if ("isTrusted" === key) {
+								hackedEv.isTrusted = true;
+							} else if ("function" === typeof args[0][key]) {
+								hackedEv[key] = args[0][key].bind(args[0]);
+							} else {
+								hackedEv[key] = args[0][key];
+							}
 						}
+
+						args[0] = hackedEv;
 					}
 
-					args[0] = hackedEv;
-				}
+					return callback.apply(callback, args);
+				};
 
-				return callback.apply(callback, args);
-			};
-
-			for (const prop in callback) {
-				if ("function" === typeof callback[prop]) {
-					wrappedHandler[prop] = callback[prop].bind(callback);
-				} else {
-					wrappedHandler[prop] = callback[prop];
+				for (const prop in callback) {
+					if ("function" === typeof callback[prop]) {
+						handler[prop] = callback[prop].bind(callback);
+					} else {
+						handler[prop] = callback[prop];
+					}
 				}
 			}
 
@@ -619,10 +617,14 @@ function wrapEventListeners() {
 			this.eventListeners[type].push({
 				listener: callback,
 				useCapture: options,
-				wrapped: wrappedHandler,
+				wrapped: handler,
 			});
 
-			return this._addEventListener(type, wrappedHandler, options);
+			return this._addEventListener(
+				type,
+				handler ? handler : callback,
+				options
+			);
 		};
 	}
 
@@ -641,14 +643,15 @@ function wrapEventListeners() {
 				this.eventListeners[type] = [];
 			}
 
-			let handler = null;
-
 			for (let i = 0; i < this.eventListeners[type].length; i++) {
 				if (
 					this.eventListeners[type][i].listener === callback &&
 					this.eventListeners[type][i].useCapture === options
 				) {
-					handler = this.eventListeners[type][i].wrapped;
+					if (this.eventListeners[type][i].wrapped) {
+						callback = this.eventListeners[type][i].wrapped;
+					}
+
 					this.eventListeners[type].splice(i, 1);
 					break;
 				}
@@ -658,7 +661,7 @@ function wrapEventListeners() {
 				delete this.eventListeners[type];
 			}
 
-			return this._removeEventListener(type, handler, options);
+			return this._removeEventListener(type, callback, options);
 		};
 	}
 }
