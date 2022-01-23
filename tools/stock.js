@@ -5,21 +5,26 @@
 /**
  * Automated stock trader. Requires all Stock Trading APIs (TIX and 4S)
  *
+ * We use the FORECAST to decide on whether to buy or sell stock.
  * Forecast toggles between bull and bear mode in a regular interval.
- * There's no fast changes between both states, and the forecast stays
- * rather static in either state:
+ * There's no unexpected changes between both states, and the forecast
+ * stays rather static in either state.
+ * For example, it goes from 0.71 directly to 0.29 and stays there:
  *
- * 0.7         ........      ........             ++   bull
- * 0.6         .      .      .      .             +
- * 0.5   - - - . - - -.- - - . - - -.- - - -
- * 0.4         .      .      .      .             -
- * 0.3   .......      ........      ........      --   bear
+ *                    +-------------+--- sell when forecast DROPS bellow 0.5
+ *                    |             |
+ *                    ▼             ▼
  *
- *             ^      ^      ^      ^
- *             |      |      |      |
- *             |      +------|------+----- sell when price is at peak
+ * 0.7         •••••••●      •••••••●             ++   bull
+ * 0.6         •      •      •      •             +
+ * 0.5   - - - • - - -•- - - • - - -•- - - -
+ * 0.4         •      •      •      •             -
+ * 0.3   ••••••●      •••••••●      ••••••••      --   bear
+ *
+ *             ▲             ▲
  *             |             |
- *             + ------------+------------ buy when price is low
+ *             + ------------+---------- buy when forecast RAISES above 0.5
+ *                                       keep buying, until price raised by 10%
  *
  * One stock will always toggle between the same level during one
  * game, and reset only when augmentations are installed.
@@ -46,16 +51,14 @@ export async function main(ns) {
 	// Maximum volatility of a stock to be considered.
 	const maxVolatility = 0.1;
 
-	// Minimum number of shares to buy in one order.
-	const minOrderVolume = 5;
+	// Minimum number of shares to purchase in one order.
+	const minShares = 5;
 
 	// Keep 1b in cash reserves
 	const OneBil = 1000 * 1000 * 1000;
 	const moneyKeep = 1 * OneBil;
 
-	ns.disableLog("disableLog");
-	ns.disableLog("sleep");
-	ns.disableLog("getServerMoneyAvailable");
+	ns.disableLog("ALL");
 	ns.clearLog();
 
 	while (true) {
@@ -80,7 +83,13 @@ export async function main(ns) {
 					const value = position[0] * bidPrice - 100000;
 					const profit = position[0] * position[1] - value;
 					ns.print(
-						`${symbol} | SELL @ ${bidPrice} | Profit ${profit.toLocaleString()}`
+						ns.sprintf(
+							"%1$5s | SELL      | $2$s shares @ %3$s | Profit: %4$s",
+							symbol,
+							ns.nFormat(position[0], "0.00a"),
+							ns.nFormat(bidPrice, "0.00a"),
+							ns.nFormat(profit, "0.00a")
+						)
 					);
 					ns.stock.sell(symbol, position[0]);
 
@@ -97,9 +106,11 @@ export async function main(ns) {
 						buyStock[symbol] = price * 1.1;
 
 						ns.print(
-							`${symbol} | START BUYING | Max price: ${buyStock[
-								symbol
-							].toFixed(2)}`
+							ns.sprintf(
+								"%1$5s | START BUY | Max price: %2$s",
+								symbol,
+								ns.nFormat(buyStock[symbol], "0.00a")
+							)
 						);
 					} else {
 						// Too volatile or too insecure: Do not buy this stock
@@ -110,8 +121,17 @@ export async function main(ns) {
 				// We continue to purchase stock shares until a calculated
 				// price limit is reached.
 				if (buyStock[symbol] && price <= buyStock[symbol]) {
-					ns.print(`${symbol} | BUY @ ${price}`);
-					buyPositions(symbol);
+					const volume = buyPositions(symbol);
+					if (volume > 0) {
+						ns.print(
+							ns.sprintf(
+								"%1$5s | BUY       | %3$s shares @ %2$s",
+								symbol,
+								ns.nFormat(price, "0.00a"),
+								ns.nFormat(volume, "0.00a")
+							)
+						);
+					}
 				}
 			} else {
 				history[symbol] = {
@@ -138,8 +158,11 @@ export async function main(ns) {
 			maxShares
 		);
 
-		if (orderVolume > 0) {
+		if (orderVolume > 0 && orderVolume >= minShares) {
 			ns.stock.buy(symbol, orderVolume);
+			return orderVolume;
 		}
+
+		return 0;
 	}
 }
