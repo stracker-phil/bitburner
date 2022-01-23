@@ -18,7 +18,6 @@ export async function main(ns) {
 		ns.tprint("Example:");
 		ns.tprint(`> run ${ns.getScriptName()} n00dles`);
 		ns.tprint(`> run ${ns.getScriptName()} --tree run`);
-		ns.tprint(`> run ${ns.getScriptName()} --connect avmi`);
 		return;
 	}
 
@@ -26,6 +25,7 @@ export async function main(ns) {
 	const matches = [];
 	const table = [];
 	const details = [];
+	const connect = [];
 
 	await Server.initialize(ns);
 	details.push(`\n- - - - - - - - - - - - - - - - - - - -`);
@@ -61,6 +61,9 @@ export async function main(ns) {
 		} else {
 			table.push([host, server.route.join(" > ")]);
 		}
+		
+		const route = server.route.slice(1);
+		connect.push(`connect ${route.join(";connect ")}`);
 	}
 
 	for (let i = 0; i < terms.length; i++) {
@@ -85,14 +88,10 @@ export async function main(ns) {
 			const server = Server.get(matches[0]);
 			const route = server.route.slice(1);
 
-			// TODO: requires SF4.1
-			/*
+			// Requires SF4.1!
 			for (let i = 0; i<route.length; i++) {
 				 ns.connect(route[i]);
 			}
-			*/
-
-			details.push("\n> connect " + route.join(";connect "));
 		} else if (!matches.length) {
 			details.push(
 				"\n  Could not find a matching server, please adjust your search terms\n"
@@ -104,7 +103,7 @@ export async function main(ns) {
 		}
 	}
 
-	ns.tprint(`${details.join("\n")}\n\n`);
+	ns.tprint(`${details.join("\n")}\n\n> ${connect.join("\n> ")}\n\n`);
 }
 
 export function autocomplete(data, args) {
