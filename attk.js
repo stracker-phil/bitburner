@@ -29,6 +29,8 @@ const changeWeaken = 0.05;
 const changeHack = 0.002;
 const changeGrow = 0.004;
 
+const maxHackBatches = 20;
+
 /**
  * Centralized monitoring script, that runs in a
  * single thread on the "home" server.
@@ -509,8 +511,7 @@ async function doAttackHack(ns, attDelay) {
 		hacksNeeded * 1.7 + 3 * growsNeeded * 1.75 + weakensNeeded * 1.75;
 
 	function runBatches(server, cycles) {
-		cycles = Math.min(cycles, 1500);
-		for (let i = 0; i < cycles; i++) {
+		for (let i = 0; i < cycles && i < maxHackBatches; i++) {
 			let startHack = delay + timeWeaken - timeHack;
 			let startWeakH = delay + 20;
 			let startGrow = delay + 40 + timeWeaken - timeGrow;
