@@ -57,12 +57,20 @@ Example:
 * `find I.I --tree` .. display path to the BlackHand server I.I.I.I
 * `find csec --connect` .. quickly find the CSEC server (*requires NS4.1*)
 
+Screenshot:
+
+<p align="center"><img src="img/ref-scan.png" width="800"/></p>
+
 ### `analyze`
 
 Display details about a specific server
 
 Usage:
 * `analyze SERVER` .. output details about the specific server
+
+Screenshot:
+
+<p align="center"><img src="img/ref-analyze.png" width="800"/></p>
 
 ### `contract`
 
@@ -72,6 +80,10 @@ Usage:
 * `contract`  .. list all available contracts
 * `contract --solve` .. automatically solve all available contracts
 
+Screenshot:
+
+<p align="center"><img src="img/ref-contract.png" width="800"/></p>
+
 ### `monitor`
 
 Monitors the current attack target (the server that's targeted by `attk.js`)
@@ -79,6 +91,10 @@ Monitors the current attack target (the server that's targeted by `attk.js`)
 Usage:
 * `monitor` .. monitor the attk.js target
 * `run tools/monitor.js n00dles; tail tools/monitor.js n00dles` .. monitor n00dles
+
+Screenshot:
+
+<p align="center"><img src="img/ref-monitor.png" width="800"/></p>
 
 ### `stock`
 
@@ -88,6 +104,10 @@ Starts automated stock trading. Stock trading will take a while before showing f
 
 Usage:
 * `stock` .. start automated stock trading.
+
+Screenshot:
+
+<p align="center"><img src="img/ref-stock.png" width="800"/></p>
 
 ### `infiltrate`
 
@@ -100,4 +120,4 @@ Usage:
 
 Screenshot:
 
-!()[img/ref-infiltrate.gif]
+<p align="center"><img src="img/ref-infiltrate.gif" width="800"/></p>
