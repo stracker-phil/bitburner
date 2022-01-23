@@ -62,9 +62,22 @@ export async function main(ns) {
 	ns.clearLog();
 
 	while (true) {
-		const stocks = ns.stock
-			.getSymbols()
-			.sort((a, b) => ns.stock.getForecast(b) - ns.stock.getForecast(a));
+		let stocks;
+
+		try {
+			stocks = ns.stock
+				.getSymbols()
+				.sort(
+					(a, b) => ns.stock.getForecast(b) - ns.stock.getForecast(a)
+				);
+		} catch (err) {
+			// Silently bail, if TIX or 4S is not available yet.
+			return;
+		}
+
+		if (!stocks) {
+			return;
+		}
 
 		for (const symbol of stocks) {
 			const price = Math.ceil(ns.stock.getAskPrice(symbol));

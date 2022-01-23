@@ -334,19 +334,26 @@ export async function main(ns) {
 		["start", false],
 		["stop", false],
 		["status", false],
+		["quiet", false],
 	]);
+
+	function print(msg) {
+		if (!args.quiet) {
+			ns.tprint(`\n${msg}\n`);
+		}
+	}
 
 	if (args.status) {
 		if (wnd.tmrAutoInf) {
-			ns.tprint("Automated infiltration is active");
+			print("Automated infiltration is active");
 		} else {
-			ns.tprint("Automated infiltration is inactive");
+			print("Automated infiltration is inactive");
 		}
 		return;
 	}
 
 	if (wnd.tmrAutoInf) {
-		ns.tprint("Stopping automated infiltration...");
+		print("Stopping automated infiltration...");
 		clearInterval(wnd.tmrAutoInf);
 		delete wnd.tmrAutoInf;
 	}
@@ -355,8 +362,8 @@ export async function main(ns) {
 		return;
 	}
 
-	ns.tprint(
-		"\nAutomated infiltration is enabled...\nVWhen you visit the infiltration screen of any company, all tasks are completed automatically.\n\n"
+	print(
+		"Automated infiltration is enabled...\nVWhen you visit the infiltration screen of any company, all tasks are completed automatically."
 	);
 
 	endInfiltration();
@@ -369,6 +376,9 @@ export async function main(ns) {
 	wrapEventListeners();
 }
 
+/**
+ * The infiltration loop, which is called at a rapid interval
+ */
 function infLoop() {
 	if (!state.started) {
 		waitForStart();
@@ -440,7 +450,6 @@ function getLines(elements) {
  */
 function endInfiltration() {
 	unwrapEventListeners();
-	console.log("End infiltration");
 	state.company = "";
 	state.started = false;
 }

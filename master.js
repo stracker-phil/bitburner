@@ -32,8 +32,6 @@ let config = {};
  * @param {NS} ns
  */
 export async function main(ns) {
-	ns.tprint(`\n---------- START ----------\n`);
-
 	const args = ns.flags([
 		["auto", false],
 		["help", false],
@@ -44,6 +42,8 @@ export async function main(ns) {
 		["target", ""],
 		["auto-target", ""],
 		["auto-grow", ""],
+		["auto-trade", ""],
+		["auto-infiltrate", ""],
 		["bound-sec", ""],
 		["bound-money", ""],
 		["lock-budget", ""],
@@ -117,7 +117,7 @@ export async function main(ns) {
 
 		Common.say(
 			ns,
-			`Automatic network growth: ${config.autoGrow ? "On" : "Off"}`
+			`Server growth daemon: ${config.autoGrow ? "On" : "Off"}`
 		);
 	}
 
@@ -134,7 +134,7 @@ export async function main(ns) {
 		config.lockedBudget = Math.max(0, parseInt(value) || 0);
 		Common.say(
 			ns,
-			`Lock budget from grow.js: ${config.lockedBudget.toLocaleString()}`
+			`Lock budget from auto grow: ${config.lockedBudget.toLocaleString()}`
 		);
 	}
 
@@ -143,6 +143,36 @@ export async function main(ns) {
 		Common.say(
 			ns,
 			`Reserved RAM on home computer: ${config.lockedRam.toLocaleString()} GB`
+		);
+	}
+
+	if ("" !== args["auto-trade"]) {
+		if ("on" === args["auto-trade"]) {
+			config.autoTrade = true;
+		} else if ("off" === args["auto-trade"]) {
+			config.autoTrade = false;
+		}
+
+		Common.say(
+			ns,
+			`Stock Trade daemon: ${
+				config.autoTrade ? "On" : "Off"
+			}`
+		);
+	}
+
+	if ("" !== args["auto-infiltrate"]) {
+		if ("on" === args["auto-infiltrate"]) {
+			config.autoInfiltrate = true;
+		} else if ("off" === args["auto-infiltrate"]) {
+			config.autoInfiltrate = false;
+		}
+
+		Common.say(
+			ns,
+			`Automatic infiltration daemon: ${
+				config.autoInfiltrate ? "On" : "Off"
+			}`
 		);
 	}
 
@@ -247,7 +277,7 @@ function showHelp(ns) {
 	params.push([
 		"--auto-grow",
 		"on|off",
-		"Enable or Disable automatic network growth.",
+		"Enable or disable automatic network growth.",
 	]);
 	params.push([]);
 	params.push([
@@ -261,13 +291,25 @@ function showHelp(ns) {
 		"VALUE",
 		"Defines, how much RAM is reserved on the home computer. Locked RAM is not used by attk.js.",
 	]);
+	params.push([]);
+	params.push([
+		"--auto-trade",
+		"on|off",
+		"Enable or disable the automatic stock trading daemon.",
+	]);
+	params.push([]);
+	params.push([
+		"--auto-infiltrate",
+		"on|off",
+		"Enable or disable the automatic infiltration daemon.",
+	]);
 
 	const help = [
 		"Usage:",
 		"  master [--command [value]] [--command2 [value2]] ...",
 		"",
 		"Examples:",
-		"  master --target n00dles",
+		"  master",
 		"  master --stop",
 		"  master --target n00dles --start",
 		"",
@@ -284,12 +326,27 @@ function showHelp(ns) {
  * Exits the script execution
  */
 function endScript(ns) {
-	ns.tprint(`\n---------- EXIT ----------\n\n`);
-
-	// On initial server we need to spawn the grow script,
+	// On starting server we need to spawn the grow script,
 	// because RAM is too scarce to run master + grow at once.
-	if (config.started && !ns.isRunning("grow.js", "home")) {
-		ns.spawn("grow.js");
+	if (config.started && !ns.isRunning("/daemon/grow.js", "home")) {
+		ns.spawn("/daemon/grow.js");
+	}
+
+	// Start or stop automatic infiltration.
+	if (config.autoInfiltrate) {
+		ns.run("/daemon/infiltrate.js", 1, "--start", "--quiet");
+	} else {
+		ns.run("/daemon/infiltrate.js", 1, "--stop", "--quiet");
+	}
+
+	// Start or stop automatic stock trading.
+	const tradeOn = ns.isRunning("tools/stock.js", "home");
+	if (config.autoTrade) {
+		if (!tradeOn) {
+			ns.run("/daemon/stock.js");
+		}
+	} else if (tradeOn) {
+		ns.kill("/daemon/stock.js");
 	}
 
 	ns.exit();
@@ -302,26 +359,26 @@ async function automation(ns, args) {
 	const homeRam = ns.getServerMaxRam("home");
 
 	guide.push(" +------- -- -");
-	guide.push(" | Current RAM: " + homeRam.toLocaleString() + " GB");
+	guide.push(" | Current home RAM: " + homeRam.toLocaleString() + " GB");
 	guide.push(" +---------- --- -");
 	guide.push("");
 
 	if (homeRam < 64) {
-		guideFile = "/guide/stage1.txt";
+		guideFile = "/guide/stage1.js";
 
 		runner = () => {
 			ns.spawn("master.js", 1, "--install", "--start");
 			ns.killall("home");
 		};
 	} else if (homeRam < 1024) {
-		guideFile = "/guide/stage2.txt";
+		guideFile = "/guide/stage2.js";
 
 		runner = () => {
 			ns.spawn("master.js", 1, "--install", "--start");
 			ns.killall("home");
 		};
 	} else {
-		guideFile = "/guide/stage3.txt";
+		guideFile = "/guide/stage3.js";
 
 		runner = () => {
 			ns.spawn("master.js", 1, "--install", "--start");

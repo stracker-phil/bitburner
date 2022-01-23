@@ -15,13 +15,12 @@ You are welcome to post feedback/ideas or share your own repo and scripts in the
 
 ```
 alias master="run master.js"
+
 alias scan="run tools/scan.js"
 alias find="run tools/find.js"
 alias analyze="run tools/analyze.js"
 alias contract="run tools/contract.js"
 alias monitor="run tools/monitor.js;tail tools/monitor.js"
-alias stock="kill tools/stock.js;run tools/stock.js;tail tools/stock.js"
-alias infiltrate="run tools/infiltrate.js"
 ```
 
 ## Scripts
@@ -100,27 +99,35 @@ Screenshot:
 
 <p align="center"><img src="img/ref-monitor.png" width="640"/></p>
 
-### `stock`
+## Daemons
 
-**Requires API access to TIX and 4S**
+The following daemons are controlled by the `master` script.
 
-Starts automated stock trading. The script observes the stock market for a few minutes before placing first orders, and requires some time before showing first profits: During the first hour(s) the script seems to generate losses because it purchases many stock shares and holds them until prices reach an optimum. For best results, leave the script running for an entire day or overnight - but ensure that the game is running, as automated stock trading does not work when the game is closed!
+### Server growth
+
+The `grow.js` daemon automatically purchases new hacknet nodes and server upgrades as they become affordable.
 
 Usage:
-* `stock` .. start automated stock trading.
+* `master --auto-grow on|off` .. Enable or disable the server growth mode
+* `master --lock-money 10b` .. Locks $10b from grow.js budget
+* `master --lock-money 0` .. Allows grow.js to use all available money
+
+### Stock trading
+
+The `stock.js` deamon is available after purchasing the TIX and 4S APIs. Starts automated stock trading. The script observes the stock market for a few minutes before placing first orders, and requires some time before showing first profits: During the first hour(s) the script seems to generate losses because it purchases many stock shares and holds them until prices reach an optimum. For best results, leave the script running for an entire day or overnight - but ensure that the game is running, as automated stock trading does not work when the game is closed!
 
 Screenshot:
 
 <p align="center"><img src="img/ref-stock.png" width="640"/></p>
 
-### `infiltrate`
+### Infiltration
 
-Starts or stops automated infiltration mode. This script is a browser-automation script that does not use the NetScript API. It parses the screen contents and simulates the relevant keystrokes to solve infiltration games.
+The `master` script will spawn a daemon that automates company infiltration. That deamon uses browser-automation and does not rely on the NetScript API. It parses the screen contents and simulates the relevant keystrokes to solve infiltration games.
+
+Once you enter the "Infiltrate" screen of any company, the deamon takes over and finishes all tasks that the company throws at us.
 
 Usage:
-* `infiltrate` .. start infiltration automation
-* `infiltrate --status` .. get the status of the automation (enabled or disabled)
-* `infiltrate --stop` .. stop automated infiltration mode again.
+* `master --auto-infiltrate on|off` .. Enable or disable the automated infiltration mode
 
 Screenshot:
 
